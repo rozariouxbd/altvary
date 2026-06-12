@@ -4,7 +4,7 @@ import { prisma } from "./prisma";
 import { encrypt, decrypt } from "./crypto";
 import { runScoring } from "./engine/scoring";
 
-const API_VERSION = "2025-01";
+export const API_VERSION = "2025-01";
 const SCOPES = process.env.SHOPIFY_SCOPES ?? "read_orders,read_customers,read_products";
 
 export function appUrl(): string {
