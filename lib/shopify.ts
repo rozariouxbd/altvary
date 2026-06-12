@@ -199,6 +199,15 @@ interface ShopifyProduct {
   variants: { id: number; sku: string | null; price: string; title: string; inventory_quantity: number | null }[];
 }
 
+/** Payload shape shared by the GDPR webhooks (customers/data_request, customers/redact, shop/redact). */
+interface ShopifyRedactPayload {
+  shop_id?: number;
+  shop_domain?: string;
+  customer?: { id: number; email?: string | null };
+  orders_requested?: number[];
+  orders_to_redact?: number[];
+}
+
 /** Pull a store's products + variants (stock + price) for inventory signals. */
 export async function backfillProducts(store: Store): Promise<number> {
   const token = await getStoreToken(store.shopDomain);
@@ -401,6 +410,63 @@ export async function handleWebhook(
       });
       return;
     }
+
+    // ── Mandatory GDPR / privacy webhooks ──────────────────────────────────
+    // Shopify requires all three to be handled (App Store compliance check).
+    // https://shopify.dev/docs/apps/build/privacy-law-compliance
+
+    // A customer requests the data a merchant holds on them. We store no PII
+    // beyond name/email + derived RFME scores; the merchant is responsible for
+    // relaying it. We acknowledge and log so there's an auditable record.
+    case "customers/data_request": {
+      const g = payload as unknown as ShopifyRedactPayload;
+      console.info("[gdpr] customers/data_request", {
+        shop: store.shopDomain,
+        customerId: g.customer?.id,
+        email: g.customer?.email,
+        ordersRequested: g.orders_requested?.length ?? 0,
+      });
+      return;
+    }
+
+    // Erase everything we hold for one customer (arrives ≥10 days after a
+    // redaction request, or after uninstall). Delete dependents before the row.
+    case "customers/redact": {
+      const g = payload as unknown as ShopifyRedactPayload;
+      const customerId = g.customer?.id != null ? String(g.customer.id) : null;
+      if (!customerId) return;
+      const where = { storeId: store.id, customerId };
+      await prisma.$transaction([
+        prisma.scoreHistory.deleteMany({ where }),
+        prisma.action.deleteMany({ where }),
+        prisma.suppression.deleteMany({ where }),
+        prisma.order.deleteMany({ where }),
+        prisma.customer.deleteMany({ where: { id: customerId, storeId: store.id } }),
+      ]);
+      console.info("[gdpr] customers/redact complete", { shop: store.shopDomain, customerId });
+      return;
+    }
+
+    // Erase all data for a shop (arrives 48h after uninstall). Wipe every
+    // tenant-scoped table, then the store itself.
+    case "shop/redact": {
+      const sid = store.id;
+      await prisma.$transaction([
+        prisma.scoreHistory.deleteMany({ where: { storeId: sid } }),
+        prisma.action.deleteMany({ where: { storeId: sid } }),
+        prisma.suppression.deleteMany({ where: { storeId: sid } }),
+        prisma.order.deleteMany({ where: { storeId: sid } }),
+        prisma.customer.deleteMany({ where: { storeId: sid } }),
+        prisma.product.deleteMany({ where: { storeId: sid } }),
+        prisma.playConfig.deleteMany({ where: { storeId: sid } }),
+        prisma.scoringRun.deleteMany({ where: { storeId: sid } }),
+        prisma.membership.deleteMany({ where: { storeId: sid } }),
+        prisma.store.delete({ where: { id: sid } }),
+      ]);
+      console.info("[gdpr] shop/redact complete — store erased", { shop: store.shopDomain });
+      return;
+    }
+
     default:
       return;
   }

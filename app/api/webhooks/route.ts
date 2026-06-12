@@ -5,7 +5,9 @@ import { verifyWebhookHmac, handleWebhook } from "../../../lib/shopify";
  * Shopify webhook receiver. Verifies the HMAC against the raw body, then routes
  * by X-Shopify-Topic. Always 200s on valid+processed; 401 on bad signature.
  *
- * Subscribed topics: orders/create, orders/updated, customers/create, customers/update.
+ * Data topics: orders/create, orders/updated, customers/create, customers/update.
+ * Mandatory GDPR topics (configured as the app's compliance webhooks URL):
+ * customers/data_request, customers/redact, shop/redact.
  */
 export async function POST(req: NextRequest) {
   const raw = await req.text();
