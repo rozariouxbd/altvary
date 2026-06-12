@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Store {
+  id              String        @id @default(cuid())
+  shopDomain      String        @unique
+  accessToken     String
+  trialEndsAt     DateTime
+  scoringSchedule String        @default("0 2 * * *")
+  createdAt       DateTime      @default(now())
+  customers       Customer[]
+  orders          Order[]
+  scoringRuns     ScoringRun[]
+  actions         Action[]
+  playConfigs     PlayConfig[]
+  suppressions    Suppression[]
+  scoreHistory    ScoreHistory[]
+  products        Product[]
+  memberships     Membership[]
+}
+
+// Links a Supabase auth user to a store (tenant) — the basis for auth + access.
+model Membership {
+  id        String   @id @default(cuid())
+  userId    String // supabase auth uid
+  email     String
+  storeId   String
+  role      String   @default("member") // owner | member
+  createdAt DateTime @default(now())
+  store     Store    @relation(fields: [storeId], references: [id])
+
+  @@unique([userId, storeId])
+}
+
+// One row per Shopify product variant — current stock + price for inventory signals.
+model Product {
+  id           String  @id // shopify variant id
+  storeId      String
+  productId    String      // shopify product id
+  title        String
+  sku          String?
+  price        Float   @default(0)
+  inventoryQty Int     @default(0)
+  status       String?
+  store        Store   @relation(fields: [storeId], references: [id])
+
+  @@index([storeId])
+}
+
+model Customer {
+  id          String    @id
+  storeId     String
+  email       String
+  firstName   String?
+  lastName    String?
+  totalSpent  Float     @default(0)
+  orderCount  Int       @default(0)
+  lastOrderAt DateTime?
+  rfmeR       Float?
+  rfmeF       Float?
+  rfmeM       Float?
+  rfmeE       Float?
+  rfmeScore   Float?
+  segment     String?
+  scoredAt    DateTime?
+  store        Store          @relation(fields: [storeId], references: [id])
+  orders       Order[]
+  actions      Action[]
+  suppressions Suppression[]
+  scoreHistory ScoreHistory[]
+}
+
+model Order {
+  id          String   @id
+  storeId     String
+  customerId  String
+  totalPrice  Float
+  refunded    Boolean  @default(false)
+  source      String?
+  createdAt   DateTime
+  store       Store    @relation(fields: [storeId], references: [id])
+  customer    Customer @relation(fields: [customerId], references: [id])
+}
+
+model ScoringRun {
+  id         String    @id @default(cuid())
+  storeId    String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  status     String
+  scored     Int       @default(0)
+  lockedBy   String?
+  store      Store     @relation(fields: [storeId], references: [id])
+}
+
+model Action {
+  id          String    @id @default(cuid())
+  storeId     String
+  customerId  String
+  playId      String
+  exportedAt  DateTime  @default(now())
+  convertedAt DateTime?
+  converted   Boolean   @default(false)
+  store       Store     @relation(fields: [storeId], references: [id])
+  customer    Customer  @relation(fields: [customerId], references: [id])
+}
+
+// Per-store, per-play mutable state. The play *definition* stays in code (lib/engine/plays).
+model PlayConfig {
+  id              String    @id @default(cuid())
+  storeId         String
+  playId          String
+  activated       Boolean   @default(false)
+  paused          Boolean   @default(false)
+  lastExportedAt  DateTime?
+  emailTemplateId String?
+  discountCode    String?
+  discountExpires DateTime?
+  store           Store     @relation(fields: [storeId], references: [id])
+
+  @@unique([storeId, playId])
+}
+
+// Run-over-run RFME snapshot — one row per customer per scoring run. Enables
+// score-drop detection (R04) and score-trend plays.
+model ScoreHistory {
+  id         String   @id @default(cuid())
+  storeId    String
+  customerId String
+  rfmeR      Float
+  rfmeF      Float
+  rfmeM      Float
+  rfmeE      Float
+  rfmeScore  Float
+  capturedAt DateTime @default(now())
+  store      Store    @relation(fields: [storeId], references: [id])
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  @@index([storeId, customerId, capturedAt])
+}
+
+// R03 suppression list — customers excluded from all play exports.
+model Suppression {
+  id         String   @id @default(cuid())
+  storeId    String
+  customerId String
+  reason     String
+  createdAt  DateTime @default(now())
+  store      Store    @relation(fields: [storeId], references: [id])
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([storeId, customerId])
+}

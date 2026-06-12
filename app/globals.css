@@ -1,26 +1,102 @@
 @import "tailwindcss";
 
+/* ── Altvary design tokens ─────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surfaces */
+  --bg:        oklch(0.971 0.004 90);
+  --card:      #ffffff;
+  --card-2:    oklch(0.979 0.004 90);
+  --line:      oklch(0.912 0.005 85);
+  --line-soft: oklch(0.945 0.004 85);
+
+  /* Ink */
+  --ink:   oklch(0.28 0.012 70);
+  --ink-2: oklch(0.44 0.010 70);
+  --muted: oklch(0.595 0.008 75);
+  --faint: oklch(0.71 0.006 80);
+
+  /* Accent */
+  --accent:      oklch(0.505 0.088 264);
+  --accent-ink:  oklch(0.42 0.10 264);
+  --accent-soft: oklch(0.957 0.017 264);
+  --accent-line: oklch(0.88 0.032 264);
+
+  /* Status */
+  --pos:       oklch(0.52 0.075 150);
+  --pos-soft:  oklch(0.955 0.028 150);
+  --neg:       oklch(0.545 0.125 25);
+  --neg-soft:  oklch(0.955 0.035 30);
+  --warn:      oklch(0.62 0.085 65);
+  --warn-soft: oklch(0.955 0.04 75);
+
+  /* Segments */
+  --seg-vip:   var(--pos);
+  --seg-ret:   var(--accent);
+  --seg-risk:  var(--warn);
+  --seg-churn: color-mix(in oklch, var(--neg) 75%, #fff);
+  --seg-lost:  var(--faint);
+
+  /* Typography */
+  --sans: var(--font-hanken), 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --mono: var(--font-geist-mono), 'Geist Mono', ui-monospace, 'SF Mono', monospace;
+
+  /* Radius */
+  --r:    14px;
+  --r-sm: 10px;
+  --r-xs: 7px;
+
+  /* Elevation */
+  --shadow:      0 1px 2px rgba(36,33,28,.05), 0 1px 1px rgba(36,33,28,.03);
+  --shadow-lift: 0 4px 16px rgba(36,33,28,.07), 0 1px 2px rgba(36,33,28,.04);
+
+  /* Layout */
+  --side-w:  236px;
+  --page-mx: 1180px;
+  --gutter:  34px;
 }
 
+/* ── Tailwind theme bridge ──────────────────────────────────────── */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg:         var(--bg);
+  --color-card:       var(--card);
+  --color-card-2:     var(--card-2);
+  --color-line:       var(--line);
+  --color-ink:        var(--ink);
+  --color-ink-2:      var(--ink-2);
+  --color-muted:      var(--muted);
+  --color-faint:      var(--faint);
+  --color-accent:     var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-pos:        var(--pos);
+  --color-pos-soft:   var(--pos-soft);
+  --color-neg:        var(--neg);
+  --color-neg-soft:   var(--neg-soft);
+  --color-warn:       var(--warn);
+  --color-warn-soft:  var(--warn-soft);
+  --font-sans:        var(--sans);
+  --font-mono:        var(--mono);
+  --radius-card:      var(--r);
+  --radius-input:     var(--r-sm);
+  --radius-btn:       var(--r-xs);
+  --shadow-card:      var(--shadow);
+  --shadow-lift:      var(--shadow-lift);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* ── Base ───────────────────────────────────────────────────────── */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Mono figures */
+.num, [data-num] {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }

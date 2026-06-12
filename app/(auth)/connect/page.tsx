@@ -1,0 +1,119 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+export default function ConnectPage() {
+  const router = useRouter();
+  const [shop, setShop] = useState("");
+  const [state, setState] = useState<"idle" | "connecting" | "connected">("idle");
+  const [error, setError] = useState(false);
+
+  function install() {
+    if (!shop.trim()) { setError(true); return; }
+    setError(false);
+    setState("connecting");
+    setTimeout(() => {
+      setState("connected");
+      setTimeout(() => router.push("/dashboard"), 1200);
+    }, 1400);
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg)" }}>
+      <div style={{ width: "100%", maxWidth: 440, padding: "0 20px" }}>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 36 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 10, background: "var(--ink)", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 16, letterSpacing: "-.02em" }}>A</div>
+          <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-.02em" }}>Alt<b>vary</b></div>
+        </div>
+
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r)", overflow: "hidden" }}>
+
+          {/* Hero */}
+          <div style={{ background: "linear-gradient(135deg,#0a0a0a 0%,#1a1a2e 100%)", padding: "36px 32px 32px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: "#fff", color: "#0a0a0a", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 22, letterSpacing: "-.04em" }}>R</div>
+              <div style={{ color: "rgba(255,255,255,.35)", fontSize: 20, fontWeight: 300, lineHeight: 1 }}>+</div>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: "#96BF48", display: "grid", placeItems: "center" }}>
+                <svg viewBox="0 0 20 20" fill="none" width="28" height="28">
+                  <path d="M13.5 2.5C13.5 2.5 13 2.6 12.3 2.8C12 1.8 11.4 0.9 10.3 0.9C10.2 0.9 10.1 0.9 10 0.9C9.7 0.5 9.3 0.3 8.9 0.3C6.9 0.3 5.9 2.7 5.6 3.9C4.8 4.1 4.2 4.3 4.1 4.3C3.6 4.5 3.6 4.5 3.5 5C3.5 5.4 2 16.4 2 16.4L13.1 18.5L18 17.4C18 17.4 15.5 3.6 15.5 3.5C15.4 3 14.9 2.7 14.4 2.6C14 2.5 13.5 2.5 13.5 2.5Z" fill="white" />
+                </svg>
+              </div>
+            </div>
+            <h1 style={{ color: "#fff", fontSize: 20, fontWeight: 700, letterSpacing: "-.02em", margin: 0 }}>Connect your Shopify store</h1>
+            <p style={{ color: "rgba(255,255,255,.55)", fontSize: 13, margin: 0, lineHeight: 1.55, maxWidth: 300 }}>Altvary will analyse your order history and start scoring customers within minutes of connecting.</p>
+          </div>
+
+          {/* Body */}
+          <div style={{ padding: "28px 32px 32px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
+              <label htmlFor="shop-url" style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}>Your store URL</label>
+            </div>
+            <div style={{ display: "flex", alignItems: "stretch", border: `1px solid ${error ? "var(--neg)" : state === "connected" ? "var(--green)" : "var(--line)"}`, borderRadius: "var(--r-sm)", background: "var(--bg)", overflow: "hidden", transition: "border-color .12s" }}>
+              <input
+                id="shop-url"
+                type="text"
+                placeholder="yourstore"
+                autoComplete="off"
+                spellCheck={false}
+                value={shop}
+                disabled={state !== "idle"}
+                onChange={e => { setShop(e.target.value); setError(false); }}
+                style={{ flex: 1, border: "none", background: "transparent", padding: "10px 12px", fontFamily: "var(--sans)", fontSize: 14, color: "var(--ink)", outline: "none", minWidth: 0 }}
+              />
+              {state !== "connected" && (
+                <div style={{ display: "flex", alignItems: "center", padding: "0 12px", borderLeft: "1px solid var(--line)", background: "var(--card-2)", fontSize: 13, color: "var(--muted)", whiteSpace: "nowrap" }}>.myshopify.com</div>
+              )}
+            </div>
+            <div style={{ fontSize: "11.5px", color: "var(--faint)", marginBottom: 18, marginTop: 6 }}>Enter the subdomain of your Shopify store.</div>
+
+            <button
+              onClick={install}
+              disabled={state !== "idle"}
+              style={{ width: "100%", padding: 13, borderRadius: "var(--r-xs)", background: state === "connected" ? "#4caf50" : "#96BF48", color: "#fff", fontFamily: "var(--sans)", fontSize: 14, fontWeight: 700, border: "none", cursor: state !== "idle" ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, boxSizing: "border-box", marginTop: 20 }}
+            >
+              {state === "idle" && (
+                <>
+                  <span style={{ width: 20, height: 20, borderRadius: 5, background: "rgba(255,255,255,.25)", display: "grid", placeItems: "center" }}>
+                    <svg viewBox="0 0 20 20" fill="none" width="12" height="12">
+                      <path d="M13.5 2.5C13.5 2.5 13 2.6 12.3 2.8C12 1.8 11.4 0.9 10.3 0.9C10.2 0.9 10.1 0.9 10 0.9C9.7 0.5 9.3 0.3 8.9 0.3C6.9 0.3 5.9 2.7 5.6 3.9C4.8 4.1 4.2 4.3 4.1 4.3C3.6 4.5 3.6 4.5 3.5 5C3.5 5.4 2 16.4 2 16.4L13.1 18.5L18 17.4C18 17.4 15.5 3.6 15.5 3.5C15.4 3 14.9 2.7 14.4 2.6C14 2.5 13.5 2.5 13.5 2.5Z" fill="white" />
+                    </svg>
+                  </span>
+                  Install Altvary on Shopify
+                </>
+              )}
+              {state === "connecting" && "Connecting to Shopify…"}
+              {state === "connected" && "Connected — starting analysis…"}
+            </button>
+
+            <div style={{ marginTop: 22, padding: 16, borderRadius: "var(--r-sm)", background: "var(--card-2)", border: "1px solid var(--line)" }}>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)", margin: "0 0 12px" }}>Permissions requested</p>
+              {[
+                "Read orders & customers — to calculate RFME scores",
+                "Read products — to enrich recommendation context",
+                "No write access to your store or checkout",
+                "Data isolated per store — never shared across tenants",
+              ].map((p, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: "12.5px", color: "var(--ink-2)", lineHeight: 1.45, marginBottom: i < 3 ? 9 : 0 }}>
+                  <i className="ti ti-check" style={{ color: "var(--pos)", fontSize: 14, flexShrink: 0, marginTop: 1 }}></i>
+                  <span>{p}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ textAlign: "center", marginTop: 20, fontSize: "12.5px", color: "var(--muted)" }}>
+              Already have an account? <Link href="/login" style={{ color: "var(--accent-ink)", fontWeight: 600 }}>Sign in instead</Link>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ textAlign: "center", marginTop: 28, fontSize: 11, color: "var(--faint)", lineHeight: 1.6 }}>
+          By installing you agree to our <a href="#" style={{ color: "var(--muted)" }}>Terms of Service</a> and <a href="#" style={{ color: "var(--muted)" }}>Privacy Policy</a>.<br />
+          Your store data is processed in an isolated tenant silo.
+        </div>
+      </div>
+    </div>
+  );
+}
