@@ -10,6 +10,9 @@ model Store {
   id              String        @id @default(cuid())
   shopDomain      String        @unique
   accessToken     String
+  // "oauth" = durable offline token from the auth-code flow (external merchants);
+  // "client_credentials" = short-lived 24h token re-minted on demand (dev store).
+  tokenType       String        @default("oauth")
   trialEndsAt     DateTime
   scoringSchedule String        @default("0 2 * * *")
   createdAt       DateTime      @default(now())

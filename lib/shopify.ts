@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import type { Store } from "@prisma/client";
 import { prisma } from "./prisma";
-import { encrypt } from "./crypto";
+import { encrypt, decrypt } from "./crypto";
 import { runScoring } from "./engine/scoring";
 
 const API_VERSION = "2025-01";
@@ -86,14 +86,29 @@ async function requestToken(shop: string): Promise<{ token: string; expiresIn: n
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
 /**
- * Get a valid Admin API token for a shop, auto-refreshing before the 24h expiry.
- * This is what app runtime code (backfill, webhook registration, future re-sync)
- * should call — it never goes stale.
+ * Get a valid Admin API token for a shop. The single chokepoint every runtime
+ * caller (backfill, owner-email, re-sync, scoring) uses, so it never goes stale.
+ *
+ * - **OAuth-installed stores (external merchants):** return the durable offline
+ *   token stored at install. Offline tokens don't expire until uninstall, so no
+ *   refresh is needed. This is the path that makes the app work for any merchant.
+ * - **client_credentials stores (org-owned dev store):** re-mint the short-lived
+ *   24h token on demand, cached until just before expiry.
  */
 export async function getStoreToken(shop: string): Promise<string> {
   const cached = tokenCache.get(shop);
   if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
 
+  const store = await prisma.store.findUnique({ where: { shopDomain: shop } });
+
+  // External merchants: use the stored, durable OAuth offline token.
+  if (store && store.tokenType === "oauth" && store.accessToken) {
+    const token = decrypt(store.accessToken);
+    tokenCache.set(shop, { token, expiresAt: Date.now() + 3_600_000 });
+    return token;
+  }
+
+  // Dev store / no OAuth token on file: mint via the client-credentials grant.
   const { token, expiresIn } = await requestToken(shop);
   tokenCache.set(shop, { token, expiresAt: Date.now() + expiresIn * 1000 });
   return token;
@@ -116,14 +131,17 @@ export async function exchangeCodeForToken(shop: string, code: string): Promise<
 
 export async function upsertStoreFromShop(shop: string, accessToken: string): Promise<Store> {
   const trialDays = Number(process.env.TRIAL_DAYS ?? 14);
+  // A fresh install/reinstall issues a new offline token — drop any cached one.
+  tokenCache.delete(shop);
   return prisma.store.upsert({
     where: { shopDomain: shop },
     create: {
       shopDomain: shop,
       accessToken: encrypt(accessToken),
+      tokenType: "oauth",
       trialEndsAt: new Date(Date.now() + trialDays * 86_400_000),
     },
-    update: { accessToken: encrypt(accessToken) },
+    update: { accessToken: encrypt(accessToken), tokenType: "oauth" },
   });
 }
 
