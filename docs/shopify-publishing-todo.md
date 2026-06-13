@@ -17,6 +17,11 @@ What remains is mostly listing content + two config toggles — no core engineer
 - [x] Shopify Billing flow built (shipped **free** via `SHOPIFY_BILLING_ENABLED` flag, default off)
 - [x] Public legal pages: /privacy, /terms, /support
 - [x] Real-merchant install + backfill + login validated end-to-end
+- [x] Connect screen (`/connect`) wired to **real** OAuth install — no longer a mock. Normalizes
+      typed input (handle, full URL, `admin.shopify.com/store/<handle>`, trailing `.myshopify.com`,
+      case/whitespace) → redirects to `/api/shopify/install?shop=<handle>.myshopify.com`. Real Shopify
+      icon used on the screen. Two install paths now work: App Store "Add app" (shop auto-passed) and
+      this direct connect screen.
 
 ---
 
