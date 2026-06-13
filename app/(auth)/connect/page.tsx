@@ -34,12 +34,10 @@ export default function ConnectPage() {
           {/* Hero */}
           <div style={{ background: "linear-gradient(135deg,#0a0a0a 0%,#1a1a2e 100%)", padding: "36px 32px 32px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ width: 48, height: 48, borderRadius: 14, background: "#fff", color: "#0a0a0a", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 22, letterSpacing: "-.04em" }}>R</div>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: "#fff", color: "#0a0a0a", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 22, letterSpacing: "-.04em" }}>A</div>
               <div style={{ color: "rgba(255,255,255,.35)", fontSize: 20, fontWeight: 300, lineHeight: 1 }}>+</div>
-              <div style={{ width: 48, height: 48, borderRadius: 14, background: "#96BF48", display: "grid", placeItems: "center" }}>
-                <svg viewBox="0 0 20 20" fill="none" width="28" height="28">
-                  <path d="M13.5 2.5C13.5 2.5 13 2.6 12.3 2.8C12 1.8 11.4 0.9 10.3 0.9C10.2 0.9 10.1 0.9 10 0.9C9.7 0.5 9.3 0.3 8.9 0.3C6.9 0.3 5.9 2.7 5.6 3.9C4.8 4.1 4.2 4.3 4.1 4.3C3.6 4.5 3.6 4.5 3.5 5C3.5 5.4 2 16.4 2 16.4L13.1 18.5L18 17.4C18 17.4 15.5 3.6 15.5 3.5C15.4 3 14.9 2.7 14.4 2.6C14 2.5 13.5 2.5 13.5 2.5Z" fill="white" />
-                </svg>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: "#fff", display: "grid", placeItems: "center" }}>
+                <img src="/shopify_icon.svg" alt="Shopify" width={30} height={30} />
               </div>
             </div>
             <h1 style={{ color: "#fff", fontSize: 20, fontWeight: 700, letterSpacing: "-.02em", margin: 0 }}>Connect your Shopify store</h1>
@@ -76,10 +74,8 @@ export default function ConnectPage() {
             >
               {state === "idle" && (
                 <>
-                  <span style={{ width: 20, height: 20, borderRadius: 5, background: "rgba(255,255,255,.25)", display: "grid", placeItems: "center" }}>
-                    <svg viewBox="0 0 20 20" fill="none" width="12" height="12">
-                      <path d="M13.5 2.5C13.5 2.5 13 2.6 12.3 2.8C12 1.8 11.4 0.9 10.3 0.9C10.2 0.9 10.1 0.9 10 0.9C9.7 0.5 9.3 0.3 8.9 0.3C6.9 0.3 5.9 2.7 5.6 3.9C4.8 4.1 4.2 4.3 4.1 4.3C3.6 4.5 3.6 4.5 3.5 5C3.5 5.4 2 16.4 2 16.4L13.1 18.5L18 17.4C18 17.4 15.5 3.6 15.5 3.5C15.4 3 14.9 2.7 14.4 2.6C14 2.5 13.5 2.5 13.5 2.5Z" fill="white" />
-                    </svg>
+                  <span style={{ width: 22, height: 22, borderRadius: 6, background: "#fff", display: "grid", placeItems: "center" }}>
+                    <img src="/shopify_icon.svg" alt="" width={15} height={15} />
                   </span>
                   Install Altvary on Shopify
                 </>
@@ -110,7 +106,7 @@ export default function ConnectPage() {
         </div>
 
         <div style={{ textAlign: "center", marginTop: 28, fontSize: 11, color: "var(--faint)", lineHeight: 1.6 }}>
-          By installing you agree to our <a href="#" style={{ color: "var(--muted)" }}>Terms of Service</a> and <a href="#" style={{ color: "var(--muted)" }}>Privacy Policy</a>.<br />
+          By installing you agree to our <a href="/terms" style={{ color: "var(--muted)" }}>Terms of Service</a> and <a href="/privacy" style={{ color: "var(--muted)" }}>Privacy Policy</a>.<br />
           Your store data is processed in an isolated tenant silo.
         </div>
       </div>
