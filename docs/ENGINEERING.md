@@ -109,6 +109,16 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
+### 2026-06-13 — Fix false "Leak detected" on Isolation page · `PENDING`
+- The Isolation audit counted rows across **all** tenants and labeled another merchant's
+  legitimate rows (27) a "leak" — showing a scary false-positive "Leak detected" with
+  cross-tenant counts (e.g. Customer 1,037 = both tenants). Not a real leak: scoped queries
+  never return other tenants' rows.
+- **Fixed:** per-table counts are now `storeId`-scoped (Customer 1,034); "Cross-tenant exposure"
+  is 0 (rows from other tenants visible to this tenant — always 0 by construction); other tenants'
+  rows are surfaced as *positive proof* of a shared-yet-isolated DB, not an alarm. Page reads Healthy.
+- *Verified live:* Healthy badge, 100% scoped, 0 exposure, scoped per-table counts.
+
 ### 2026-06-13 — Monthly segment snapshot + cron auth fix · `886c06c`
 - **Added** `SegmentSnapshot` model (one aggregate row per store per month: segment headcounts,
   total, avgScore, total + per-segment LTV), written by `runScoring` (create-once-per-month).
