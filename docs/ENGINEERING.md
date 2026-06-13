@@ -109,6 +109,12 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
+### 2026-06-13 — Demote Isolation to Settings + plain-English copy · `a2a6024`
+- The data-privacy/isolation page is a trust artifact, not a daily merchant tool, and a buggy
+  version could alarm merchants in prime nav. Removed it from the main sidebar (route + Settings →
+  "Audit isolation" entry point retained). Softened the header from RLS/HMAC jargon to "Your data
+  is private" plain English; technical proof stays below.
+
 ### 2026-06-13 — Fix false "Leak detected" on Isolation page · `39c6076`
 - The Isolation audit counted rows across **all** tenants and labeled another merchant's
   legitimate rows (27) a "leak" — showing a scary false-positive "Leak detected" with
