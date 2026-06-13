@@ -93,7 +93,7 @@ export default function EngineCatalogPage() {
         <aside style={{ width: 240, flexShrink: 0, borderRight: "1px solid var(--line)", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--card)" }}>
           <div style={{ padding: "14px 16px 10px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>32 intelligence types</div>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>5 layers · 5 live in MVP</div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>5 layers · 5 live now</div>
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
             {SECTIONS.map((sec) => (

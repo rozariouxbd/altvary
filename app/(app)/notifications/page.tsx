@@ -303,7 +303,7 @@ export default function NotificationsPage() {
       <main className="page">
         <div className="note note-acc" style={{ marginBottom: 16 }}>
           <i className="ti ti-brand-shopify" />
-          <div><strong>MVP — Actions export as CSV. Klaviyo flow triggers and Gorgias helpdesk actions unlock post-MVP.</strong></div>
+          <div><strong>Actions export as CSV today. Klaviyo flow triggers and Gorgias helpdesk actions are coming soon.</strong></div>
         </div>
 
         <div className="page-head" style={{ marginBottom: 16 }}>

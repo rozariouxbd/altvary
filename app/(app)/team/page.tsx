@@ -138,7 +138,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
 
         {/* Permission matrix */}
         <div className="card" style={{ marginBottom: 20 }}>
-          <div className="card-head"><div><div className="card-title">Permission matrix</div><div className="card-sub">What each role can do (enforcement rolls out post-MVP)</div></div></div>
+          <div className="card-head"><div><div className="card-title">Permission matrix</div><div className="card-sub">What each role can do (role enforcement is coming soon)</div></div></div>
           <div className="tbl-wrap">
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>

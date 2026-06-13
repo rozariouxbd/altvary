@@ -180,7 +180,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
 
         <div className="note" style={{ marginTop: 16 }}>
           <i className="ti ti-info-circle"></i>
-          <span>Burn-rate &amp; days-of-cover need historical stock snapshots (a future addition). Out-of-stock hold (R16) &amp; launch readiness (R13) unlock with replenishment-window and waitlist data.</span>
+          <span>Burn-rate &amp; days-of-cover coverage is coming soon. Out-of-stock holds &amp; launch-readiness alerts arrive as we add replenishment-window and waitlist data.</span>
         </div>
       </main>
     </>

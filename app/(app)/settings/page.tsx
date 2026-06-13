@@ -57,7 +57,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <main className="page">
         <div className="note note-acc" style={{ marginBottom: 16 }}>
           <i className="ti ti-brand-shopify"></i>
-          <div><strong>Live — store config from Shopify. Klaviyo, Gorgias, and notification settings unlock post-MVP.</strong></div>
+          <div><strong>Live — store config from Shopify. Klaviyo, Gorgias, and notification settings are coming soon.</strong></div>
         </div>
         <div className="page-head">
           <div>
@@ -139,7 +139,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                   <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)" }}>{t.rule}</span>
                 </div>
               ))}
-              <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 12, lineHeight: 1.5 }}>Deterministic by design — same inputs always produce the same score. Editable thresholds roll out post-MVP.</div>
+              <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 12, lineHeight: 1.5 }}>Deterministic by design — same inputs always produce the same score. Editable thresholds are coming soon.</div>
             </div>
           </div>
 

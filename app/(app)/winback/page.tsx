@@ -42,7 +42,7 @@ export default async function WinbackPage({ searchParams }: { searchParams: Prom
       <main className="page">
         <div className="note note-acc" style={{ marginBottom: 16 }}>
           <i className="ti ti-brand-shopify"></i>
-          <div><strong>Live — R02 win-back. Candidates export as CSV; direct Klaviyo segment push unlocks post-MVP.</strong></div>
+          <div><strong>Live win-back. Export candidates as CSV; one-click Klaviyo push is coming soon.</strong></div>
         </div>
         <div className="page-head">
           <div>

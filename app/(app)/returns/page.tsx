@@ -38,7 +38,7 @@ export default async function ReturnsPage({ searchParams }: { searchParams: Prom
       <main className="page">
         <div className="note note-acc" style={{ marginBottom: 16 }}>
           <i className="ti ti-brand-shopify"></i>
-          <div><strong>Live — returns sourced from refunded Shopify orders. Carrier-tracking signals unlock post-MVP.</strong></div>
+          <div><strong>Live — returns sourced from refunded Shopify orders. Carrier-tracking signals are coming soon.</strong></div>
         </div>
         <div className="page-head">
           <div>

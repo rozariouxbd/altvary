@@ -61,7 +61,7 @@ export default async function PlayDetailPage({ params }: { params: Promise<{ id:
             <i className="ti ti-flask-off" style={{ fontSize: 28, color: "var(--faint)" }}></i>
             <div style={{ marginTop: 10, fontWeight: 600, color: "var(--ink-2)" }}>This play isn&apos;t active yet</div>
             <div style={{ fontSize: 13, marginTop: 4 }}>
-              {id.toUpperCase()} isn&apos;t in the live engine. It unlocks once its data source (product, returns, or an integration) is connected.
+              {id.toUpperCase()} isn&apos;t active yet. It becomes available once its data source (product, returns, or an integration) is connected.
             </div>
           </div>
         </main>
@@ -182,7 +182,7 @@ export default async function PlayDetailPage({ params }: { params: Promise<{ id:
 
         <div className="note" style={{ marginTop: 16 }}>
           <i className="ti ti-shield-check"></i>
-          <span>Scored inside Glow Botanics&apos; silo. Export delivers a CSV — Klaviyo push unlocks post-MVP.</span>
+          <span>Scored inside your store&apos;s private data. Export delivers a CSV — one-click Klaviyo push is coming soon.</span>
         </div>
       </main>
     </>

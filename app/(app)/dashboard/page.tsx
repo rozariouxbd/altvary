@@ -70,7 +70,7 @@ export default async function DashboardPage() {
           <i className="ti ti-brand-shopify" />
           <div>
             <strong>Live — Shopify data.</strong> All scores and recommendations are powered by your
-            Shopify order history. Actions export as CSV — Klaviyo and Gorgias integrations unlock post-MVP.
+            Shopify order history. Export actions as CSV — Klaviyo and Gorgias integrations are coming soon.
           </div>
         </div>
 

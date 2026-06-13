@@ -41,7 +41,7 @@ export default async function AttributionPage({ searchParams }: { searchParams: 
       <main className="page">
         <div className="note note-acc" style={{ marginBottom: 16 }}>
           <i className="ti ti-brand-shopify"></i>
-          <div><strong>Live — first-party attribution from Shopify order source. Multi-touch journey &amp; ad attribution unlock post-MVP.</strong></div>
+          <div><strong>Live — first-party attribution from your Shopify order sources. Multi-touch journeys &amp; ad attribution are coming soon.</strong></div>
         </div>
         <div className="page-head">
           <div>

@@ -15,7 +15,7 @@ export default function SuppressionPage() {
       <main className="page">
       <div className="note note-acc" style={{ marginBottom: 16 }}>
         <i className="ti ti-brand-shopify"></i>
-        <div><strong>MVP — Suppression list is fully active. Suppressed customers are excluded from all recommendation queues.</strong></div>
+        <div><strong>Your suppression list is fully active — suppressed customers are excluded from every recommendation queue.</strong></div>
       </div>
       <div className="page-head">
         <div>

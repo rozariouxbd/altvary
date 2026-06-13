@@ -3,7 +3,7 @@ import Topbar from "../../components/Topbar";
 export default function IntegrationsPage() {
   return (
     <>
-      <Topbar title="Integrations" sub="2 connected · Shopify data only in MVP" search="Search integrations…" cta={{ icon: "ti-plus", label: "Add integration", variant: "primary" }} />
+      <Topbar title="Integrations" sub="2 connected · Shopify-powered" search="Search integrations…" cta={{ icon: "ti-plus", label: "Add integration", variant: "primary" }} />
       <main className="page">
       <div className="page-head">
         <div>
@@ -17,7 +17,7 @@ export default function IntegrationsPage() {
 
       <div className="note note-acc" style={{ marginBottom: 16 }}>
         <i className="ti ti-info-circle"></i>
-        <div><strong>MVP — Shopify data only.</strong> All scoring, segments, and recommendations run entirely on your Shopify order and customer history. Marketing and ads integrations unlock in the full release.</div>
+        <div><strong>Shopify-powered.</strong> All scoring, segments, and recommendations run entirely on your Shopify order and customer history. Marketing and ads integrations are coming soon.</div>
       </div>
 
       {/* Stats */}
@@ -71,14 +71,14 @@ export default function IntegrationsPage() {
         </div>
       </div>
 
-      {/* Post-MVP sections */}
+      {/* Coming-soon sections */}
       {[
-        { label: "Marketing — post-MVP", cards: [
-          { icon: "ti-mail", name: "Klaviyo", desc: "Push segments directly to Klaviyo flows — unlock when ready" },
-          { icon: "ti-message-circle", name: "Gorgias", desc: "Helpdesk signals for at-risk customers — unlock when ready" },
+        { label: "Marketing — coming soon", cards: [
+          { icon: "ti-mail", name: "Klaviyo", desc: "Push segments directly to Klaviyo flows" },
+          { icon: "ti-message-circle", name: "Gorgias", desc: "Helpdesk signals for at-risk customers" },
           { icon: "ti-brand-slack", name: "Slack", desc: "VIP drop alerts and weekly digest to your team channel" },
         ]},
-        { label: "Ads & social — post-MVP", cards: [
+        { label: "Ads & social — coming soon", cards: [
           { icon: "ti-brand-meta", name: "Meta Ads", desc: "Custom audiences · lookalike signals · ad attribution" },
           { icon: "ti-brand-google", name: "Google Ads", desc: "Spend + search attribution" },
         ]},
@@ -91,7 +91,7 @@ export default function IntegrationsPage() {
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
                   <div style={{ width: 36, height: 36, borderRadius: 10, display: "grid", placeItems: "center" as const, fontSize: 18, flexShrink: 0, background: "var(--card-2)", color: "var(--muted)" }}><i className={`ti ${c.icon}`}></i></div>
                   <div style={{ flex: 1 }}><div style={{ fontSize: "13.5px", fontWeight: 700 }}>{c.name}</div><div style={{ fontSize: "11.5px", color: "var(--muted)", marginTop: 1 }}>Not connected</div></div>
-                  <span style={{ fontSize: "10.5px", fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "var(--card-2)", color: "var(--muted)", border: "1px solid var(--line)" }}>Post-MVP</span>
+                  <span style={{ fontSize: "10.5px", fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "var(--card-2)", color: "var(--muted)", border: "1px solid var(--line)" }}>Coming soon</span>
                 </div>
                 <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginBottom: 12 }}>{c.desc}</div>
                 <button className="btn btn-ghost btn-sm" disabled>Coming soon</button>

@@ -44,7 +44,7 @@ export default async function ReportsPage() {
       <main className="page">
         <div className="note note-acc" style={{ marginBottom: 16 }}>
           <i className="ti ti-brand-shopify"></i>
-          <div><strong>Live — reports computed from your Shopify data. Ad spend and email metrics unlock post-MVP.</strong></div>
+          <div><strong>Live — reports computed from your Shopify data. Ad-spend and email metrics are coming soon.</strong></div>
         </div>
         <div className="page-head">
           <div>
@@ -120,7 +120,7 @@ export default async function ReportsPage() {
 
         <div className="note" style={{ marginTop: 16 }}>
           <i className="ti ti-info-circle"></i>
-          <span>Scheduled PDF digests and revenue-influenced attribution (tying actioned exports to conversions) are post-MVP — they need email-platform metrics and a conversion feedback loop.</span>
+          <span>Scheduled PDF digests and revenue-influenced attribution (tying actioned exports to conversions) are coming soon — they need email-platform metrics and a conversion feedback loop.</span>
         </div>
       </main>
     </>
