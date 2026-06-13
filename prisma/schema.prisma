@@ -25,6 +25,34 @@ model Store {
   scoreHistory    ScoreHistory[]
   products        Product[]
   memberships     Membership[]
+  segmentSnapshots SegmentSnapshot[]
+}
+
+// One small aggregate row per store per month — macro segment/LTV totals for
+// future retention-history trends. Complements the 30-day ScoreHistory prune:
+// individual history stays light; macro trend data is preserved cheaply.
+model SegmentSnapshot {
+  id           String   @id @default(cuid())
+  storeId      String
+  period       String   // "YYYY-MM"
+  capturedAt   DateTime @default(now())
+  total        Int
+  avgScore     Float
+  totalLtv     Float
+  vip          Int
+  returning    Int
+  atRisk       Int
+  churning     Int
+  lost         Int
+  vipLtv       Float
+  returningLtv Float
+  atRiskLtv    Float
+  churningLtv  Float
+  lostLtv      Float
+  store        Store    @relation(fields: [storeId], references: [id])
+
+  @@unique([storeId, period])
+  @@index([storeId, period])
 }
 
 // Links a Supabase auth user to a store (tenant) — the basis for auth + access.

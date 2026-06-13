@@ -471,6 +471,7 @@ export async function handleWebhook(
       const sid = store.id;
       await prisma.$transaction([
         prisma.scoreHistory.deleteMany({ where: { storeId: sid } }),
+        prisma.segmentSnapshot.deleteMany({ where: { storeId: sid } }),
         prisma.action.deleteMany({ where: { storeId: sid } }),
         prisma.suppression.deleteMany({ where: { storeId: sid } }),
         prisma.order.deleteMany({ where: { storeId: sid } }),

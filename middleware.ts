@@ -32,7 +32,9 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/connect") || pathname.startsWith("/api/shopify") || pathname.startsWith("/api/auth");
-  const isPublicApi = pathname.startsWith("/api/webhooks");
+  // Machine endpoints that authenticate themselves (HMAC / CRON_SECRET) — they have
+  // no user session, so the auth gate must let them through to their own route guard.
+  const isPublicApi = pathname.startsWith("/api/webhooks") || pathname.startsWith("/api/scoring");
   // Public legal/marketing pages — required to be reachable without auth for App Store review.
   const isPublicPage = pathname === "/privacy" || pathname === "/terms" || pathname === "/support";
 

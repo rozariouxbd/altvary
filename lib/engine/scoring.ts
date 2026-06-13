@@ -115,6 +115,9 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
 
     const capturedAt = new Date();
     const segments: Record<string, number> = {};
+    const segmentLtv: Record<string, number> = {};
+    let totalLtv = 0;
+    let scoreSum = 0;
     const scored = customers.map((c) => {
       const r = Math.round(R.get(c.id)!);
       const f = Math.round(F.get(c.id)!);
@@ -123,6 +126,9 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       const score = Math.round(r * W.r + f * W.f + m * W.m + e * W.e);
       const segment = segmentForScore(score);
       segments[segment] = (segments[segment] ?? 0) + 1;
+      segmentLtv[segment] = (segmentLtv[segment] ?? 0) + c.totalSpent;
+      totalLtv += c.totalSpent;
+      scoreSum += score;
       return { id: c.id, r, f, m, e, score, segment };
     });
 
@@ -161,6 +167,32 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
     const cutoff = new Date(capturedAt.getTime() - SCORE_HISTORY_RETENTION_DAYS * DAY);
     await prisma.scoreHistory.deleteMany({
       where: { storeId: store.id, capturedAt: { lt: cutoff } },
+    });
+
+    // Monthly macro snapshot — one tiny aggregate row per store per month, kept
+    // forever for future retention-history trends (segment headcount + LTV).
+    // create-once-per-month: the first run of each calendar month writes it,
+    // later runs no-op. See docs/scaling-notes.md.
+    const period = `${capturedAt.getUTCFullYear()}-${String(capturedAt.getUTCMonth() + 1).padStart(2, "0")}`;
+    await prisma.segmentSnapshot.upsert({
+      where: { storeId_period: { storeId: store.id, period } },
+      create: {
+        storeId: store.id, period, capturedAt,
+        total: scored.length,
+        avgScore: scored.length ? scoreSum / scored.length : 0,
+        totalLtv,
+        vip: segments.vip ?? 0,
+        returning: segments.returning ?? 0,
+        atRisk: segments.at_risk ?? 0,
+        churning: segments.churning ?? 0,
+        lost: segments.lost ?? 0,
+        vipLtv: segmentLtv.vip ?? 0,
+        returningLtv: segmentLtv.returning ?? 0,
+        atRiskLtv: segmentLtv.at_risk ?? 0,
+        churningLtv: segmentLtv.churning ?? 0,
+        lostLtv: segmentLtv.lost ?? 0,
+      },
+      update: {},
     });
 
     await prisma.scoringRun.update({

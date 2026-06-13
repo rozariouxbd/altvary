@@ -43,6 +43,16 @@ days** (`SCORE_HISTORY_RETENTION_DAYS`) after writing each snapshot. This keeps 
 `scoreDrop7d` scan permanently small with no schema change. Verified: a planted
 40-day-old row is deleted on the next run; recent snapshots are kept.
 
+## Done — monthly macro snapshot (preserves trend data despite the prune)
+The 30-day prune discards long-range *individual* history. To keep the *macro* trend data a
+future "retention history" feature will need, `runScoring` also writes one tiny
+`SegmentSnapshot` row per store per calendar month (create-once-per-month, keyed by
+`(storeId, period="YYYY-MM")`). It captures segment headcounts (vip/returning/atRisk/churning/
+lost), `total`, `avgScore`, and per-segment + total **LTV** — all reused from the scoring loop,
+no extra query. One row/store/month is effectively free storage and is kept indefinitely. No UI
+yet; this only captures the data so it exists when the history feature ships. `shop/redact`
+deletes these rows as part of full-store erasure.
+
 ## Deferred — persist signals as columns (revisit at high order volume)
 If a merchant ever exceeds **~100k orders**, the per-request order scan in
 `computeSignals` would start to matter. The fix then (not now — premature at our
