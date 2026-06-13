@@ -1,10 +1,12 @@
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
+import type { Prisma } from "@prisma/client";
 import CustomersView, { type CustomerRow } from "./CustomersView";
 
-const SEG_MAP: Record<string, string> = {
-  vip: "vip", returning: "ret", at_risk: "risk", churning: "churn", lost: "lost",
-};
+// short code (URL/UI) ↔ DB segment value
+const SHORT_TO_DB: Record<string, string> = { vip: "vip", ret: "returning", risk: "at_risk", churn: "churning", lost: "lost" };
+const DB_TO_SHORT: Record<string, string> = { vip: "vip", returning: "ret", at_risk: "risk", churning: "churn", lost: "lost" };
+
 const SEG_ACTION: Record<string, string> = {
   vip: "VIP nurture — early access",
   ret: "Replenishment nudge",
@@ -13,23 +15,76 @@ const SEG_ACTION: Record<string, string> = {
   lost: "Suppressed — ignore list",
 };
 
+const PAGE_SIZE = 50;
+const SORTS = ["score", "recent", "ltv", "orders"] as const;
+type Sort = (typeof SORTS)[number];
+
 function initials(first: string | null, last: string | null, email: string): string {
   const a = (first ?? "").trim();
   const b = (last ?? "").trim();
   if (a || b) return `${a[0] ?? ""}${b[0] ?? ""}`.toUpperCase();
   return (email[0] ?? "?").toUpperCase();
 }
-
 function fmtDate(d: Date | null): string {
   return d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
 }
 
-export default async function CustomersPage() {
+type SP = Record<string, string | undefined>;
+
+export default async function CustomersPage({ searchParams }: { searchParams: Promise<SP> }) {
+  const sp = await searchParams;
   const store = await getCurrentStore();
-  const customers = store ? await prisma.customer.findMany({ where: { storeId: store.id }, orderBy: { rfmeScore: "desc" } }) : [];
+
+  const segment = sp.segment && SHORT_TO_DB[sp.segment] ? sp.segment : "all";
+  const q = (sp.q ?? "").trim();
+  const sort: Sort = (SORTS as readonly string[]).includes(sp.sort ?? "") ? (sp.sort as Sort) : "score";
+  const minOrders = Math.max(0, parseInt(sp.minOrders ?? "0", 10) || 0);
+  const lastOrderDays = Math.max(0, parseInt(sp.lastOrderDays ?? "0", 10) || 0);
+  const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
+
+  if (!store) {
+    return (
+      <CustomersView rows={[]} counts={{}} storeTotal={0} filteredTotal={0}
+        page={1} pageSize={PAGE_SIZE} segment="all" sort="score" minOrders={0} lastOrderDays={0} q="" />
+    );
+  }
+
+  // Cross-cutting filters (search + order/recency) — applied to BOTH the list and the tile counts.
+  const baseWhere: Prisma.CustomerWhereInput = { storeId: store.id };
+  if (q) {
+    baseWhere.OR = [
+      { firstName: { contains: q, mode: "insensitive" } },
+      { lastName: { contains: q, mode: "insensitive" } },
+      { email: { contains: q, mode: "insensitive" } },
+    ];
+  }
+  if (minOrders > 0) baseWhere.orderCount = { gte: minOrders };
+  if (lastOrderDays > 0) baseWhere.lastOrderAt = { gte: new Date(Date.now() - lastOrderDays * 86_400_000) };
+
+  // The list additionally narrows by the selected segment tile.
+  const listWhere: Prisma.CustomerWhereInput = segment === "all" ? baseWhere : { ...baseWhere, segment: SHORT_TO_DB[segment] };
+
+  const orderBy: Prisma.CustomerOrderByWithRelationInput =
+    sort === "recent" ? { lastOrderAt: "desc" } :
+    sort === "ltv" ? { totalSpent: "desc" } :
+    sort === "orders" ? { orderCount: "desc" } :
+    { rfmeScore: "desc" };
+
+  const [grouped, filteredTotal, storeTotal, customers] = await Promise.all([
+    prisma.customer.groupBy({ by: ["segment"], where: baseWhere, _count: { _all: true } }),
+    prisma.customer.count({ where: listWhere }),
+    prisma.customer.count({ where: { storeId: store.id } }),
+    prisma.customer.findMany({ where: listWhere, orderBy, skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE }),
+  ]);
+
+  const counts: Record<string, number> = {};
+  for (const g of grouped) {
+    const short = DB_TO_SHORT[g.segment ?? ""];
+    if (short) counts[short] = (counts[short] ?? 0) + g._count._all;
+  }
 
   const rows: CustomerRow[] = customers.map((c) => {
-    const seg = SEG_MAP[c.segment ?? ""] ?? "risk";
+    const seg = DB_TO_SHORT[c.segment ?? ""] ?? "risk";
     const name = `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || c.email;
     return {
       id: c.id,
@@ -44,10 +99,19 @@ export default async function CustomersPage() {
     };
   });
 
-  const counts = rows.reduce<Record<string, number>>((acc, r) => {
-    acc[r.seg] = (acc[r.seg] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  return <CustomersView rows={rows} counts={counts} total={rows.length} />;
+  return (
+    <CustomersView
+      rows={rows}
+      counts={counts}
+      storeTotal={storeTotal}
+      filteredTotal={filteredTotal}
+      page={page}
+      pageSize={PAGE_SIZE}
+      segment={segment}
+      sort={sort}
+      minOrders={minOrders}
+      lastOrderDays={lastOrderDays}
+      q={q}
+    />
+  );
 }
