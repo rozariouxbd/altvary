@@ -6,7 +6,11 @@ import { evaluatePlay } from "../../../lib/engine/evaluate";
 import { computeSignals } from "../../../lib/engine/signals";
 import { R02 } from "../../../lib/engine/plays/r02";
 
-export default async function WinbackPage() {
+const PAGE_SIZE = 50;
+
+export default async function WinbackPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  const sp = await searchParams;
+  const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const store = await getCurrentStore();
   const signals = store ? await computeSignals(store.id) : new Map();
   const res = store
@@ -14,6 +18,11 @@ export default async function WinbackPage() {
     : { candidates: [], candidateCount: 0, projectedRevenue: 0 };
 
   const cands = res.candidates;
+  const pageCount = Math.max(1, Math.ceil(cands.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageItems = cands.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const start = cands.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const end = Math.min(safePage * PAGE_SIZE, cands.length);
   const churnCount = cands.filter((c) => c.customer.segment === "churning").length;
   const riskCount = cands.filter((c) => c.customer.segment === "at_risk").length;
   const avgLtv = cands.length ? cands.reduce((s, c) => s + c.customer.totalSpent, 0) / cands.length : 0;
@@ -95,7 +104,7 @@ export default async function WinbackPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {cands.map(({ customer: c, expectedValue }) => {
+                    {pageItems.map(({ customer: c, expectedValue }) => {
                       const sig = signals.get(c.id);
                       const segCls = c.segment === "churning" ? "churn" : "risk";
                       return (
@@ -119,6 +128,20 @@ export default async function WinbackPage() {
                   </tbody>
                 </table>
               </div>
+              {pageCount > 1 && (
+                <div style={{ padding: "13px 22px", borderTop: "1px solid var(--line-soft)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>Showing <b style={{ color: "var(--ink)" }}>{start.toLocaleString()}–{end.toLocaleString()}</b> of <b style={{ color: "var(--ink)" }}>{cands.length.toLocaleString()}</b></span>
+                  <div className="row gap-s">
+                    {safePage > 1
+                      ? <Link href={`/winback?page=${safePage - 1}`} className="btn btn-ghost btn-sm"><i className="ti ti-arrow-left"></i> Prev</Link>
+                      : <button className="btn btn-ghost btn-sm" disabled style={{ opacity: .4 }}><i className="ti ti-arrow-left"></i> Prev</button>}
+                    <span style={{ fontSize: 12, color: "var(--muted)", padding: "0 4px" }}>Page {safePage.toLocaleString()} of {pageCount.toLocaleString()}</span>
+                    {safePage < pageCount
+                      ? <Link href={`/winback?page=${safePage + 1}`} className="btn btn-ghost btn-sm">Next <i className="ti ti-arrow-right"></i></Link>
+                      : <button className="btn btn-ghost btn-sm" disabled style={{ opacity: .4 }}>Next <i className="ti ti-arrow-right"></i></button>}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Detail panel — top candidate */}

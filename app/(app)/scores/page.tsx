@@ -3,6 +3,7 @@ import Topbar from "../../components/Topbar";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { computeSignals } from "../../../lib/engine/signals";
+import type { CustomerSignal } from "../../../lib/engine/types";
 
 const SEG = [
   { key: "vip", icon: "ti-crown", label: "VIP", range: "80–100", color: "var(--pos)" },
@@ -16,27 +17,45 @@ const SEG_LABEL: Record<string, string> = { vip: "VIP", returning: "Returning", 
 
 export default async function ScoresPage() {
   const store = await getCurrentStore();
-  const [customers, lastRun, runCount] = store ? await Promise.all([
-    prisma.customer.findMany({ where: { storeId: store.id } }),
-    prisma.scoringRun.findFirst({ where: { storeId: store.id, status: "complete" }, orderBy: { finishedAt: "desc" } }),
-    prisma.scoringRun.count({ where: { storeId: store.id, status: "complete" } }),
-  ]) : [[], null, 0];
-  const total = customers.length;
-  const signals = store ? await computeSignals(store.id) : new Map();
+  const signals = store ? await computeSignals(store.id) : new Map<string, CustomerSignal>();
+
+  // Counts + average via DB aggregates — never loads the customer table.
+  const [grouped, agg, lastRun, runCount] = store
+    ? await Promise.all([
+        prisma.customer.groupBy({ by: ["segment"], where: { storeId: store.id }, _count: { _all: true } }),
+        prisma.customer.aggregate({ where: { storeId: store.id }, _avg: { rfmeScore: true }, _count: { _all: true } }),
+        prisma.scoringRun.findFirst({ where: { storeId: store.id, status: "complete" }, orderBy: { finishedAt: "desc" } }),
+        prisma.scoringRun.count({ where: { storeId: store.id, status: "complete" } }),
+      ])
+    : [[], null, null, 0];
 
   const counts: Record<string, number> = {};
-  for (const c of customers) counts[c.segment ?? ""] = (counts[c.segment ?? ""] ?? 0) + 1;
-  const avgScore = total ? customers.reduce((s, c) => s + (c.rfmeScore ?? 0), 0) / total : 0;
+  for (const g of grouped) counts[g.segment ?? ""] = g._count._all;
+  const total = agg?._count._all ?? 0;
+  const avgScore = agg?._avg.rfmeScore ?? 0;
 
-  const movement = customers
-    .map((c) => ({ c, sig: signals.get(c.id) }))
-    .filter((x) => x.sig?.scoreDrop7d != null && Math.abs(x.sig.scoreDrop7d) >= 8)
-    .sort((a, b) => (b.sig!.scoreDrop7d ?? 0) - (a.sig!.scoreDrop7d ?? 0));
+  // Movement alerts — derive from signals, then fetch only the affected customers (capped).
+  const moverEntries = [...signals.entries()]
+    .filter(([, s]) => s.scoreDrop7d != null && Math.abs(s.scoreDrop7d) >= 8)
+    .sort((a, b) => (b[1].scoreDrop7d ?? 0) - (a[1].scoreDrop7d ?? 0))
+    .slice(0, 50);
+  const moverIds = moverEntries.map(([id]) => id);
+  const moverCustomers = store && moverIds.length
+    ? await prisma.customer.findMany({ where: { storeId: store.id, id: { in: moverIds } } })
+    : [];
+  const moverById = new Map(moverCustomers.map((c) => [c.id, c]));
+  const movement = moverEntries
+    .map(([id, sig]) => ({ c: moverById.get(id), sig }))
+    .filter((x): x is { c: NonNullable<(typeof x)["c"]>; sig: CustomerSignal } => !!x.c);
 
-  const atRisk = customers
-    .filter((c) => ["at_risk", "churning"].includes(c.segment ?? ""))
-    .sort((a, b) => b.totalSpent - a.totalSpent)
-    .slice(0, 6);
+  // Top at-risk by recoverable revenue — bounded query, not a full load.
+  const atRisk = store
+    ? await prisma.customer.findMany({
+        where: { storeId: store.id, segment: { in: ["at_risk", "churning"] } },
+        orderBy: { totalSpent: "desc" },
+        take: 6,
+      })
+    : [];
 
   return (
     <>
