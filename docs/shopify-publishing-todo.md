@@ -39,6 +39,12 @@ What remains is mostly listing content + two config toggles — no core engineer
 - [ ] Replace the manually-set test password on `alextheous@gmail.com` with proper magic-link login once SMTP is live
 - [ ] Confirm a real "uninstall" fires `shop/redact` and wipes the store (test by uninstalling from a throwaway store)
 
+## 🧹 UI polish (merchant-facing, not blocking)
+- [ ] **Integrations page is still a mock** (`app/(app)/integrations/page.tsx`) — hardcoded
+      `glowskinco.myshopify.com` + fake stats (24,180 events, 100% webhook success). Make it live:
+      show the real connected Shopify shop domain + real webhook/event counts, or simplify to a
+      truthful "Shopify connected" state. (Copy was already de-jargoned; the data is the issue.)
+
 ---
 
 ## 🖼️ Listing assets (you create the images)
