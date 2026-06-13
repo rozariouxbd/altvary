@@ -67,12 +67,12 @@ export default async function IsolationPage() {
 
   return (
     <>
-      <Topbar title="Isolation" sub="Tenant data isolation · HMAC-SHA256 · RLS-enforced" search="Search audit log…" cta={{ icon: "ti-refresh", label: "Re-verify now", href: "/isolation" }} />
+      <Topbar title="Data privacy" sub="Your store's data is private and never shared" cta={{ icon: "ti-refresh", label: "Re-verify now", href: "/isolation" }} />
       <main className="page">
         <div className="page-head">
           <div>
-            <h1 className="page-title">Tenant isolation</h1>
-            <p className="page-sub">Every row in every table is scoped to this tenant by <code style={{ fontFamily: "var(--mono)", fontSize: 12 }}>storeId</code>, with Postgres Row-Level Security enforced.</p>
+            <h1 className="page-title">Your data is private</h1>
+            <p className="page-sub">Your store&apos;s customers, orders, and scores are completely separated from every other merchant on Altvary — no one else can ever see them. The technical details below are here if you want to verify it yourself.</p>
           </div>
           <span className={`tag ${healthy ? "pos" : "neg"}`}><i className={`ti ${healthy ? "ti-shield-check" : "ti-shield-x"}`}></i> {healthy ? "Healthy" : "Leak detected"}</span>
         </div>

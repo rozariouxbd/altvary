@@ -33,7 +33,6 @@ export default function Sidebar({ customerCount, playCount, storeName, trialDays
       { href: "/reports",      icon: "ti-report-analytics",  label: "Reports",      count: "" },
       { href: "/team",         icon: "ti-users-group",       label: "Team",         count: "" },
       { href: "/settings",     icon: "ti-settings",          label: "Settings",     count: "" },
-      { href: "/isolation",    icon: "ti-shield-lock",       label: "Isolation",    count: "" },
     ],
   };
 
