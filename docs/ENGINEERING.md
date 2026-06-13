@@ -109,7 +109,7 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
-### 2026-06-13 — Fix false "Leak detected" on Isolation page · `PENDING`
+### 2026-06-13 — Fix false "Leak detected" on Isolation page · `39c6076`
 - The Isolation audit counted rows across **all** tenants and labeled another merchant's
   legitimate rows (27) a "leak" — showing a scary false-positive "Leak detected" with
   cross-tenant counts (e.g. Customer 1,037 = both tenants). Not a real leak: scoped queries
