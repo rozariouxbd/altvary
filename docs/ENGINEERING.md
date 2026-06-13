@@ -109,6 +109,12 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
+### 2026-06-13 — Remove internal MVP/post-MVP copy from merchant UI · `e2ec690`
+- "MVP", "post-MVP", "unlock in the full release" etc. were leaking into ~13 merchant-facing pages.
+  Replaced with merchant-friendly wording ("coming soon" / plain statements of what's live).
+  Also fixed a leftover mock brand name ("Glow Botanics") on the recommendation detail page.
+- Note: Integrations page is still a mock (hardcoded `glowskinco`, fake stats) — separate cleanup.
+
 ### 2026-06-13 — Demote Isolation to Settings + plain-English copy · `a2a6024`
 - The data-privacy/isolation page is a trust artifact, not a daily merchant tool, and a buggy
   version could alarm merchants in prime nav. Removed it from the main sidebar (route + Settings →
