@@ -6,6 +6,9 @@ const DAY = 86_400_000;
 /** RFME composite weights (match the customer-detail UI). */
 const W = { r: 0.35, f: 0.25, m: 0.25, e: 0.15 };
 
+/** How many days of ScoreHistory snapshots to retain after each run (see prune below). */
+const SCORE_HISTORY_RETENTION_DAYS = 30;
+
 export function segmentForScore(score: number): string {
   if (score >= 80) return "vip";
   if (score >= 60) return "returning";
@@ -148,6 +151,16 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         storeId: store.id, customerId: s.id,
         rfmeR: s.r, rfmeF: s.f, rfmeM: s.m, rfmeE: s.e, rfmeScore: s.score, capturedAt,
       })),
+    });
+
+    // Retention prune: ScoreHistory gains one row per customer per run, so it
+    // grows unbounded with time (not revenue). scoreDrop7d only needs ~7 days of
+    // snapshots; keep 30 for headroom and delete the rest. This keeps the
+    // per-request scoreDrop scan (lib/engine/signals.ts) permanently small/fast
+    // without persisting derived columns — see docs/scaling-notes.md.
+    const cutoff = new Date(capturedAt.getTime() - SCORE_HISTORY_RETENTION_DAYS * DAY);
+    await prisma.scoreHistory.deleteMany({
+      where: { storeId: store.id, capturedAt: { lt: cutoff } },
     });
 
     await prisma.scoringRun.update({
