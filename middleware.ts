@@ -33,8 +33,10 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/connect") || pathname.startsWith("/api/shopify") || pathname.startsWith("/api/auth");
   const isPublicApi = pathname.startsWith("/api/webhooks");
+  // Public legal/marketing pages — required to be reachable without auth for App Store review.
+  const isPublicPage = pathname === "/privacy" || pathname === "/terms" || pathname === "/support";
 
-  if (!user && !isAuthRoute && !isPublicApi) {
+  if (!user && !isAuthRoute && !isPublicApi && !isPublicPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
