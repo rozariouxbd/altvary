@@ -2,22 +2,35 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+
+/**
+ * Normalize whatever the merchant types into a bare store handle (the part before
+ * .myshopify.com). Handles pasted full URLs, the admin.shopify.com/store/<handle>
+ * form, a trailing .myshopify.com, protocols, and stray paths.
+ */
+function normalizeHandle(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^admin\.shopify\.com\/store\//, "")
+    .replace(/\.myshopify\.com.*$/, "")
+    .replace(/\/.*$/, "")
+    .replace(/[^a-z0-9-]/g, "");
+}
 
 export default function ConnectPage() {
-  const router = useRouter();
   const [shop, setShop] = useState("");
   const [state, setState] = useState<"idle" | "connecting" | "connected">("idle");
   const [error, setError] = useState(false);
 
   function install() {
-    if (!shop.trim()) { setError(true); return; }
+    const handle = normalizeHandle(shop);
+    if (!handle) { setError(true); return; }
     setError(false);
     setState("connecting");
-    setTimeout(() => {
-      setState("connected");
-      setTimeout(() => router.push("/dashboard"), 1200);
-    }, 1400);
+    // Hand off to the real OAuth install — this 307s to Shopify's consent screen.
+    window.location.assign(`/api/shopify/install?shop=${handle}.myshopify.com`);
   }
 
   return (
@@ -59,13 +72,14 @@ export default function ConnectPage() {
                 value={shop}
                 disabled={state !== "idle"}
                 onChange={e => { setShop(e.target.value); setError(false); }}
+                onKeyDown={e => { if (e.key === "Enter") install(); }}
                 style={{ flex: 1, border: "none", background: "transparent", padding: "10px 12px", fontFamily: "var(--sans)", fontSize: 14, color: "var(--ink)", outline: "none", minWidth: 0 }}
               />
               {state !== "connected" && (
                 <div style={{ display: "flex", alignItems: "center", padding: "0 12px", borderLeft: "1px solid var(--line)", background: "var(--card-2)", fontSize: 13, color: "var(--muted)", whiteSpace: "nowrap" }}>.myshopify.com</div>
               )}
             </div>
-            <div style={{ fontSize: "11.5px", color: "var(--faint)", marginBottom: 18, marginTop: 6 }}>Enter the subdomain of your Shopify store.</div>
+            <div style={{ fontSize: "11.5px", color: "var(--faint)", marginBottom: 18, marginTop: 6 }}>Your store handle — the part before <b>.myshopify.com</b> (the handle in your <span style={{ fontFamily: "var(--mono)" }}>admin.shopify.com/store/…</span> URL).</div>
 
             <button
               onClick={install}
