@@ -109,7 +109,7 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
-### 2026-06-14 — Per-store display currency
+### 2026-06-14 — Per-store display currency · `15c66d8`
 - **What.** Money now renders in each store's own currency instead of a hardcoded `$`. New
   `Store.currency` (ISO 4217, default `USD`), auto-captured from Shopify `shop.json` at the top
   of `backfillStore` (runs on install + every "Sync from Shopify", so existing stores backfill
@@ -128,7 +128,7 @@ Format: `### YYYY-MM-DD — short title` + what changed + why + verification, an
 - **Verification.** `npx tsc --noEmit` clean; `npm run build` clean (all routes compiled);
   Prisma client regenerated; `Store.currency` confirmed in prod (`text default 'USD'`).
 
-### 2026-06-14 — Merchant-tunable RFME weights (Settings sliders)
+### 2026-06-14 — Merchant-tunable RFME weights (Settings sliders) · `15c66d8`
 - **What.** Merchants can now set the RFME composite weights themselves via sliders in
   Settings → RFME configuration. New `ScoringConfig` model (per-store `wR/wF/wM/wE` points,
   `@unique storeId`); `runScoring` reads them through a new `getStoreWeights()` that normalizes
