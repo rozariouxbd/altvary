@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   const q = (req.nextUrl.searchParams.get("q") ?? "").trim();
   const store = await getCurrentStore();
   if (!store || q.length < 1) {
-    return NextResponse.json({ customers: [], products: [], plays: [] });
+    return NextResponse.json({ customers: [], products: [], plays: [], currency: store?.currency ?? "USD" });
   }
 
   const [customers, products] = await Promise.all([
@@ -44,5 +44,5 @@ export async function GET(req: NextRequest) {
     .slice(0, 6)
     .map((p) => ({ code: p.code, name: p.name, description: p.description }));
 
-  return NextResponse.json({ customers, products, plays });
+  return NextResponse.json({ customers, products, plays, currency: store.currency });
 }

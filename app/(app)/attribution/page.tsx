@@ -3,6 +3,7 @@ import RangeTabs from "../../components/RangeTabs";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { asRange, rangeSince, rangeLabel } from "../../../lib/filters";
+import { formatMoney } from "../../../lib/money";
 
 const COLORS = ["var(--accent)", "var(--pos)", "var(--warn)", "var(--neg)", "var(--accent-ink)", "var(--muted)"];
 
@@ -10,6 +11,7 @@ export default async function AttributionPage({ searchParams }: { searchParams: 
   const range = asRange((await searchParams).range);
   const since = rangeSince(range);
   const store = await getCurrentStore();
+  const currency = store?.currency ?? "USD";
   const orders = store ? await prisma.order.findMany({ where: { storeId: store.id, ...(since ? { createdAt: { gte: since } } : {}) }, select: { source: true, totalPrice: true } }) : [];
 
   const totalOrders = orders.length;
@@ -55,7 +57,7 @@ export default async function AttributionPage({ searchParams }: { searchParams: 
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 18 }}>
           {[
-            { l: "Total revenue", v: `$${Math.round(totalRevenue).toLocaleString()}` },
+            { l: "Total revenue", v: formatMoney(Math.round(totalRevenue), currency) },
             { l: "Orders", v: totalOrders.toLocaleString() },
             { l: "Channels", v: String(channels.length) },
             { l: "Top channel", v: topChannel ? topChannel.name : "—" },
@@ -99,8 +101,8 @@ export default async function AttributionPage({ searchParams }: { searchParams: 
                         </div>
                       </td>
                       <td style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right" }}>{c.orders.toLocaleString()}</td>
-                      <td className="hide-mobile" style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--muted)", textAlign: "right" }}>${c.aov.toFixed(2)}</td>
-                      <td style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, textAlign: "right" }}>${c.revenue.toLocaleString()}</td>
+                      <td className="hide-mobile" style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--muted)", textAlign: "right" }}>{formatMoney(c.aov, currency, { decimals: 2 })}</td>
+                      <td style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, textAlign: "right" }}>{formatMoney(c.revenue, currency)}</td>
                       <td style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right", color: "var(--muted)" }}>{c.pct.toFixed(1)}%</td>
                     </tr>
                   ))}

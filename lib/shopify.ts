@@ -283,6 +283,20 @@ function isRefunded(o: ShopifyOrder): boolean {
 export async function backfillStore(store: Store): Promise<{ customers: number; orders: number; products: number }> {
   // Always use a fresh (auto-refreshing) token rather than the stored one.
   const token = await getStoreToken(store.shopDomain);
+
+  // Keep the store's display currency in sync with its Shopify default. All synced
+  // amounts are already in this currency — this drives formatting only. Non-fatal:
+  // a failure here must never block the data backfill.
+  try {
+    const { data } = await adminGet<{ shop: { currency?: string | null } }>(store.shopDomain, token, "shop.json");
+    const currency = data.shop.currency;
+    if (currency && currency !== store.currency) {
+      await prisma.store.update({ where: { id: store.id }, data: { currency } });
+    }
+  } catch {
+    /* keep existing currency */
+  }
+
   let customerCount = 0;
   let orderCount = 0;
 

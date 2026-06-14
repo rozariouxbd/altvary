@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { formatMoney } from "../../lib/money";
 
 interface Item {
   type: string;
@@ -14,6 +15,7 @@ interface SearchResponse {
   customers: { id: string; firstName: string | null; lastName: string | null; email: string; segment: string | null; orderCount: number; totalSpent: number }[];
   products: { id: string; title: string; sku: string | null; inventoryQty: number }[];
   plays: { code: string; name: string; description: string }[];
+  currency: string;
 }
 
 export default function CommandPalette() {
@@ -64,7 +66,7 @@ export default function CommandPalette() {
         const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
         const d: SearchResponse = await res.json();
         const list: Item[] = [
-          ...d.customers.map((c) => ({ type: "Customer", icon: "ti-user", label: `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || c.email, sub: `${c.email} · ${c.orderCount} orders · $${c.totalSpent.toLocaleString()}`, href: `/customers/${c.id}` })),
+          ...d.customers.map((c) => ({ type: "Customer", icon: "ti-user", label: `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || c.email, sub: `${c.email} · ${c.orderCount} orders · ${formatMoney(c.totalSpent, d.currency)}`, href: `/customers/${c.id}` })),
           ...d.products.map((p) => ({ type: "Product", icon: "ti-box", label: p.title, sub: `SKU ${p.sku || "—"} · ${p.inventoryQty} in stock`, href: "/inventory" })),
           ...d.plays.map((p) => ({ type: "Play", icon: "ti-sparkles", label: `${p.code} — ${p.name}`, sub: p.description, href: `/recommendations/${p.code.toLowerCase()}` })),
         ];

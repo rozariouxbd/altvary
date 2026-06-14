@@ -1,4 +1,5 @@
 import type { PlayDefinition } from "../types";
+import { formatMoney } from "../../money";
 
 /**
  * R07 — High-LTV entry product.
@@ -32,6 +33,6 @@ export const R07: PlayDefinition = {
     { key: "name", header: "Name", get: (c) => `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() },
     { key: "firstOrderValue", header: "First order", get: (c) => c.totalSpent.toFixed(2) },
     { key: "rfmeScore", header: "RFME score", get: (c) => String(Math.round(c.rfmeScore ?? 0)) },
-    { key: "expectedRepeat", header: "Expected repeat", get: (c, v) => `$${v}` },
+    { key: "expectedRepeat", header: "Expected repeat", get: (_c, v, cur) => formatMoney(v, cur) },
   ],
 };

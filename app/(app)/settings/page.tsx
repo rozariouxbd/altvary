@@ -3,18 +3,13 @@ import Topbar from "../../components/Topbar";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { runScoring } from "../../../lib/engine/scoring";
+import WeightSliders from "./WeightSliders";
 
 function prettyStore(domain: string): string {
   return domain.replace(/\.myshopify\.com$/, "").split("-").map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
 }
 
-// Active engine configuration (lib/engine/scoring.ts).
-const WEIGHTS = [
-  { dim: "R", label: "Recency", w: "0.35" },
-  { dim: "F", label: "Frequency", w: "0.25" },
-  { dim: "M", label: "Monetary", w: "0.25" },
-  { dim: "E", label: "Engagement", w: "0.15" },
-];
+const DEFAULT_WEIGHT_POINTS = { wR: 35, wF: 25, wM: 25, wE: 15 };
 const THRESHOLDS = [
   { tag: "pos", label: "VIP", rule: "Score ≥ 80" },
   { tag: "acc", label: "Returning", rule: "Score 60–79" },
@@ -39,14 +34,44 @@ async function recomputeNow() {
   redirect("/settings?notice=recomputed");
 }
 
+async function updateWeights(formData: FormData) {
+  "use server";
+  const store = await getCurrentStore();
+  if (!store) redirect("/settings");
+  const clamp = (raw: FormDataEntryValue | null) => {
+    const n = Math.round(Number(raw));
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+  };
+  const wR = clamp(formData.get("wR"));
+  const wF = clamp(formData.get("wF"));
+  const wM = clamp(formData.get("wM"));
+  const wE = clamp(formData.get("wE"));
+  // All-zero can't be normalized — reject rather than silently default.
+  if (wR + wF + wM + wE === 0) redirect("/settings?notice=weights-invalid");
+  await prisma.scoringConfig.upsert({
+    where: { storeId: store.id },
+    create: { storeId: store.id, wR, wF, wM, wE },
+    update: { wR, wF, wM, wE },
+  });
+  redirect("/settings?notice=weights-saved");
+}
+
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ notice?: string }> }) {
   const sp = await searchParams;
   const store = await getCurrentStore();
-  const [lastRun, runCount, memberCount] = store ? await Promise.all([
+  const [lastRun, runCount, memberCount, scoringConfig] = store ? await Promise.all([
     prisma.scoringRun.findFirst({ where: { storeId: store.id, status: "complete" }, orderBy: { finishedAt: "desc" } }),
     prisma.scoringRun.count({ where: { storeId: store.id, status: "complete" } }),
     prisma.membership.count({ where: { storeId: store.id } }),
-  ]) : [null, 0, 0];
+    prisma.scoringConfig.findUnique({ where: { storeId: store.id } }),
+  ]) : [null, 0, 0, null];
+
+  const weightPoints = {
+    wR: scoringConfig?.wR ?? DEFAULT_WEIGHT_POINTS.wR,
+    wF: scoringConfig?.wF ?? DEFAULT_WEIGHT_POINTS.wF,
+    wM: scoringConfig?.wM ?? DEFAULT_WEIGHT_POINTS.wM,
+    wE: scoringConfig?.wE ?? DEFAULT_WEIGHT_POINTS.wE,
+  };
 
   const trialDaysLeft = store ? Math.max(0, Math.ceil((store.trialEndsAt.getTime() - Date.now()) / 86_400_000)) : 0;
   const storeName = store ? prettyStore(store.shopDomain) : "—";
@@ -71,6 +96,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
         {sp.notice === "saved" && <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}><i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>Scoring schedule saved.</div></div>}
         {sp.notice === "recomputed" && <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}><i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>Recompute complete — scores refreshed.</div></div>}
+        {sp.notice === "weights-saved" && <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}><i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>RFME weights saved — applies on the next scoring run. Hit <b>Recompute now</b> to apply immediately.</div></div>}
+        {sp.notice === "weights-invalid" && <div className="note" style={{ marginBottom: 16, background: "var(--neg-soft)", borderColor: "transparent" }}><i className="ti ti-alert-triangle" style={{ color: "var(--neg)" }} /><div>Weights must not all be zero — at least one dimension needs weight.</div></div>}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, alignItems: "start" }}>
           {/* Plan & trial */}
@@ -121,25 +148,18 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
           {/* RFME configuration (active engine) */}
           <div className="card">
-            <div className="card-head"><div><div className="card-title">RFME configuration</div><div className="card-sub">Active scoring formula &amp; segment thresholds</div></div><a href="/scores" className="btn btn-ghost btn-sm"><i className="ti ti-chart-histogram" /> View scores</a></div>
+            <div className="card-head"><div><div className="card-title">RFME configuration</div><div className="card-sub">Tune the scoring formula for your store</div></div><a href="/scores" className="btn btn-ghost btn-sm"><i className="ti ti-chart-histogram" /> View scores</a></div>
             <div className="card-pad">
               <div style={{ fontSize: "10.5px", textTransform: "uppercase", letterSpacing: ".08em", color: "var(--faint)", fontWeight: 600, marginBottom: 8 }}>Weights</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px", marginBottom: 14 }}>
-                {WEIGHTS.map((w) => (
-                  <div key={w.dim} style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", padding: "4px 0" }}>
-                    <span style={{ color: "var(--ink-2)" }}><b>{w.dim}</b> · {w.label}</span>
-                    <span style={{ fontFamily: "var(--mono)", fontWeight: 600 }}>×{w.w}</span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: "10.5px", textTransform: "uppercase", letterSpacing: ".08em", color: "var(--faint)", fontWeight: 600, margin: "8px 0" }}>Segment thresholds</div>
+              <WeightSliders initial={weightPoints} action={updateWeights} />
+              <div style={{ fontSize: "10.5px", textTransform: "uppercase", letterSpacing: ".08em", color: "var(--faint)", fontWeight: 600, margin: "16px 0 8px" }}>Segment thresholds</div>
               {THRESHOLDS.map((t, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 0", borderBottom: i < THRESHOLDS.length - 1 ? "1px solid var(--line-soft)" : "none" }}>
                   <span className={`tag ${t.tag}`}>{t.label}</span>
                   <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)" }}>{t.rule}</span>
                 </div>
               ))}
-              <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 12, lineHeight: 1.5 }}>Deterministic by design — same inputs always produce the same score. Editable thresholds are coming soon.</div>
+              <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 12, lineHeight: 1.5 }}>Deterministic by design — same inputs and weights always produce the same score. Editable thresholds are coming soon.</div>
             </div>
           </div>
 

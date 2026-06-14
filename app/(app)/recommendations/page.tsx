@@ -3,6 +3,7 @@ import Topbar from "../../components/Topbar";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { evaluateAll } from "../../../lib/engine/evaluate";
+import { formatMoney } from "../../../lib/money";
 import type { PlayEvalResult, PlayLayer, PlayStatus } from "../../../lib/engine/types";
 
 const STATUS_META: Record<PlayStatus, { cls: string; label: string }> = {
@@ -32,7 +33,7 @@ function StatusDot({ status }: { status: PlayStatus }) {
   );
 }
 
-function PlayRow({ r }: { r: PlayEvalResult }) {
+function PlayRow({ r, currency }: { r: PlayEvalResult; currency: string }) {
   const color = LAYER_META[r.play.layer].color;
   return (
     <Link
@@ -52,7 +53,7 @@ function PlayRow({ r }: { r: PlayEvalResult }) {
         <div style={{ fontSize: 10, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".05em", marginTop: 1 }}>Customers</div>
       </div>
       <div style={{ textAlign: "right" }}>
-        <div style={{ fontFamily: "var(--mono)", fontSize: 14, fontWeight: 600 }}>${r.projectedRevenue.toLocaleString()}</div>
+        <div style={{ fontFamily: "var(--mono)", fontSize: 14, fontWeight: 600 }}>{formatMoney(r.projectedRevenue, currency)}</div>
         <div style={{ fontSize: 10, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".05em", marginTop: 1 }}>Projected</div>
       </div>
       <StatusDot status={r.status} />
@@ -61,7 +62,7 @@ function PlayRow({ r }: { r: PlayEvalResult }) {
   );
 }
 
-function LayerGroup({ layer, plays }: { layer: PlayLayer; plays: PlayEvalResult[] }) {
+function LayerGroup({ layer, plays, currency }: { layer: PlayLayer; plays: PlayEvalResult[]; currency: string }) {
   const customers = plays.reduce((a, p) => a + p.candidateCount, 0);
   return (
     <>
@@ -71,13 +72,14 @@ function LayerGroup({ layer, plays }: { layer: PlayLayer; plays: PlayEvalResult[
         <span style={{ flex: 1, height: 1, background: "var(--line)" }}></span>
         <span style={{ fontSize: "11.5px", color: "var(--muted)" }}><b style={{ fontFamily: "var(--mono)", color: "var(--ink-2)", fontWeight: 600 }}>{customers.toLocaleString()}</b> customers</span>
       </div>
-      {plays.map((r) => <PlayRow key={r.play.id} r={r} />)}
+      {plays.map((r) => <PlayRow key={r.play.id} r={r} currency={currency} />)}
     </>
   );
 }
 
 export default async function RecommendationsPage() {
   const store = await getCurrentStore();
+  const currency = store?.currency ?? "USD";
   const results = store ? await evaluateAll(store) : [];
 
   const totalCustomers = results.reduce((a, r) => a + r.candidateCount, 0);
@@ -104,7 +106,7 @@ export default async function RecommendationsPage() {
   const summary = [
     { v: String(results.length), l: "Active plays" },
     { v: totalCustomers.toLocaleString(), l: "Customers queued" },
-    { v: `$${totalProjected.toLocaleString()}`, l: "Projected revenue" },
+    { v: formatMoney(totalProjected, currency), l: "Projected revenue" },
     { v: `${liveCount}/${results.length}`, l: "Live or exported" },
   ];
 
@@ -180,7 +182,7 @@ export default async function RecommendationsPage() {
                 <div style={{ padding: "30px 20px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
                   No recommendations available right now — sync orders or wait for the nightly scoring run.
                 </div>
-              ) : byLayer.map((g) => <LayerGroup key={g.layer} layer={g.layer} plays={g.plays} />)}
+              ) : byLayer.map((g) => <LayerGroup key={g.layer} layer={g.layer} plays={g.plays} currency={currency} />)}
             </div>
 
             {inactive.length > 0 && (

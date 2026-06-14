@@ -9,6 +9,10 @@ datasource db {
 model Store {
   id              String        @id @default(cuid())
   shopDomain      String        @unique
+  // ISO 4217 code (USD, CAD, EUR, GBP…), the shop's default currency from
+  // Shopify shop.json. All synced order/customer amounts are already in this
+  // currency — it drives display formatting only (no FX conversion).
+  currency        String        @default("USD")
   accessToken     String
   // "oauth" = durable offline token from the auth-code flow (external merchants);
   // "client_credentials" = short-lived 24h token re-minted on demand (dev store).
@@ -26,6 +30,22 @@ model Store {
   products        Product[]
   memberships     Membership[]
   segmentSnapshots SegmentSnapshot[]
+  scoringConfig   ScoringConfig?
+}
+
+// Per-store RFME weight customization (Settings → sliders). Weights are stored
+// as raw points (0–100 each); the engine normalizes them to sum to 1 at scoring
+// time, so the merchant tunes *relative* emphasis without having to make the
+// numbers add up themselves. No row ⇒ engine defaults (R35 / F25 / M25 / E15).
+model ScoringConfig {
+  id        String   @id @default(cuid())
+  storeId   String   @unique
+  wR        Int      @default(35)
+  wF        Int      @default(25)
+  wM        Int      @default(25)
+  wE        Int      @default(15)
+  updatedAt DateTime @updatedAt
+  store     Store    @relation(fields: [storeId], references: [id])
 }
 
 // One small aggregate row per store per month — macro segment/LTV totals for
@@ -126,6 +146,12 @@ model ScoringRun {
   status     String
   scored     Int       @default(0)
   lockedBy   String?
+  // Signature of the normalized RFME weights this run used (see weightsKey in
+  // lib/engine/scoring.ts). When it differs from the prior run's, that run
+  // rebaselined every score — signals.ts suppresses run-over-run score drops
+  // that straddle the change so R04 can't fire spuriously. Null for runs that
+  // never completed (and for runs predating this field).
+  weights    String?
   store      Store     @relation(fields: [storeId], references: [id])
 }
 

@@ -1,4 +1,5 @@
 import type { PlayDefinition } from "../types";
+import { formatMoney } from "../../money";
 
 const DAY = 86_400_000;
 const day = (n: number) => new Date(Date.now() - n * DAY);
@@ -71,6 +72,6 @@ export const R02: PlayDefinition = {
       header: "RFME score",
       get: (c) => String(Math.round(c.rfmeScore ?? 0)),
     },
-    { key: "expectedLift", header: "Expected lift", get: (_c, v) => `$${v}` },
+    { key: "expectedLift", header: "Expected lift", get: (_c, v, cur) => formatMoney(v, cur) },
   ],
 };

@@ -53,11 +53,11 @@ export interface PlayRequirement {
   satisfied: (ctx: PlayEvalContext) => boolean;
 }
 
-/** One column in a play's CSV export. `get(customer, expectedValue)` → cell string. */
+/** One column in a play's CSV export. `get(customer, expectedValue, currency)` → cell string. */
 export interface ExportColumn {
   key: string;
   header: string;
-  get: (customer: Customer, expectedValue: number) => string;
+  get: (customer: Customer, expectedValue: number, currency: string) => string;
 }
 
 /**

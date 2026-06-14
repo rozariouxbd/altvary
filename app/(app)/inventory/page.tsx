@@ -2,6 +2,7 @@ import Link from "next/link";
 import Topbar from "../../components/Topbar";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
+import { formatMoney } from "../../../lib/money";
 import type { Prisma } from "@prisma/client";
 
 const LOW_THRESHOLD = 20;
@@ -33,6 +34,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   const q = (sp.q ?? "").trim();
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const store = await getCurrentStore();
+  const currency = store?.currency ?? "USD";
 
   // Build hrefs that preserve the other params.
   function href(overrides: { status?: StockFilter; q?: string; page?: number }): string {
@@ -102,7 +104,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
             { l: "Total SKUs", v: totalSkus.toLocaleString() },
             { l: "Low stock SKUs", v: lowCount.toLocaleString(), color: lowCount ? "var(--warn)" : undefined },
             { l: "Out of stock", v: oosCount.toLocaleString(), color: oosCount ? "var(--neg)" : undefined },
-            { l: "Inventory value", v: `$${inventoryValue.toLocaleString()}` },
+            { l: "Inventory value", v: formatMoney(inventoryValue, currency) },
           ].map((s, i) => (
             <div key={i} className="card" style={{ padding: "18px 20px" }}>
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, fontWeight: 600 }}>{s.l}</div>
@@ -151,8 +153,8 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
                         <td><div className="who"><span className="av">{skuInitials(p.title)}</span><div><div className="nm">{p.title}</div></div></div></td>
                         <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)" }}>{p.sku || "—"}</td>
                         <td style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, textAlign: "right", color: st.cls === "neg" ? "var(--neg)" : st.cls === "warn" ? "var(--warn)" : undefined }}>{p.inventoryQty}</td>
-                        <td className="hide-mobile" style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right" }}>${p.price.toFixed(2)}</td>
-                        <td className="hide-tablet" style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--muted)", textAlign: "right" }}>${Math.round(p.inventoryQty * p.price).toLocaleString()}</td>
+                        <td className="hide-mobile" style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right" }}>{formatMoney(p.price, currency, { decimals: 2 })}</td>
+                        <td className="hide-tablet" style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--muted)", textAlign: "right" }}>{formatMoney(Math.round(p.inventoryQty * p.price), currency)}</td>
                         <td><span className={`tag ${st.cls}`}>{st.label}</span></td>
                       </tr>
                     );

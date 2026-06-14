@@ -2,6 +2,7 @@ import Topbar from "../../components/Topbar";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { evaluateAll } from "../../../lib/engine/evaluate";
+import { formatMoney } from "../../../lib/money";
 
 const SEG_LABEL: Record<string, string> = { vip: "VIP", returning: "Returning", at_risk: "At risk", churning: "Churning", lost: "Lost" };
 
@@ -15,6 +16,7 @@ const EXPORTS = [
 
 export default async function ReportsPage() {
   const store = await getCurrentStore();
+  const currency = store?.currency ?? "USD";
   const [customers, orders, lastRun, runCount] = store ? await Promise.all([
     prisma.customer.findMany({ where: { storeId: store.id }, select: { segment: true, rfmeScore: true } }),
     prisma.order.findMany({ where: { storeId: store.id }, select: { totalPrice: true, source: true } }),
@@ -57,8 +59,8 @@ export default async function ReportsPage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 18 }}>
           {[
             { l: "Customers scored", v: customers.length.toLocaleString() },
-            { l: "Total revenue", v: `$${totalRevenue.toLocaleString()}`, color: "var(--pos)" },
-            { l: "Projected (recoverable)", v: `$${projected.toLocaleString()}` },
+            { l: "Total revenue", v: formatMoney(totalRevenue, currency), color: "var(--pos)" },
+            { l: "Projected (recoverable)", v: formatMoney(projected, currency) },
             { l: "Scoring runs", v: String(runCount) },
           ].map((s, i) => (
             <div key={i} className="card" style={{ padding: "18px 20px" }}>
@@ -80,8 +82,8 @@ export default async function ReportsPage() {
           <div style={{ padding: "4px 20px 20px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 14 }}>
               {[
-                { v: `$${totalRevenue.toLocaleString()}`, s: `${orders.length} orders` },
-                { v: `$${aov.toFixed(2)}`, s: "Avg order value" },
+                { v: formatMoney(totalRevenue, currency), s: `${orders.length} orders` },
+                { v: formatMoney(aov, currency, { decimals: 2 }), s: "Avg order value" },
                 { v: avgScore.toFixed(1), s: "Avg RFME score" },
                 { v: `${queued.toLocaleString()}`, s: "In recommendation queues" },
               ].map((kpi, i) => (
@@ -93,10 +95,10 @@ export default async function ReportsPage() {
             </div>
             <p style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-2)", margin: 0 }}>
               <strong>Summary:</strong> {customers.length.toLocaleString()} customers scored across {orders.length} orders worth{" "}
-              <strong style={{ color: "var(--pos)" }}>${totalRevenue.toLocaleString()}</strong>.
-              {topChannel ? <> Top channel is <strong>{topChannel[0]}</strong> (${Math.round(topChannel[1]).toLocaleString()}).</> : null}{" "}
+              <strong style={{ color: "var(--pos)" }}>{formatMoney(totalRevenue, currency)}</strong>.
+              {topChannel ? <> Top channel is <strong>{topChannel[0]}</strong> ({formatMoney(Math.round(topChannel[1]), currency)}).</> : null}{" "}
               {activePlays.length > 0 ? (
-                <>The engine has <strong>{activePlays.length} active play{activePlays.length === 1 ? "" : "s"}</strong> with {queued.toLocaleString()} customers queued and <strong style={{ color: "var(--pos)" }}>${projected.toLocaleString()}</strong> projected — led by {activePlays.sort((a, b) => b.projectedRevenue - a.projectedRevenue)[0].play.name}.</>
+                <>The engine has <strong>{activePlays.length} active play{activePlays.length === 1 ? "" : "s"}</strong> with {queued.toLocaleString()} customers queued and <strong style={{ color: "var(--pos)" }}>{formatMoney(projected, currency)}</strong> projected — led by {activePlays.sort((a, b) => b.projectedRevenue - a.projectedRevenue)[0].play.name}.</>
               ) : <>No plays have candidates right now.</>}{" "}
               Segments: {Object.entries(segCounts).filter(([k]) => k).map(([k, n]) => `${n} ${SEG_LABEL[k] ?? k}`).join(" · ")}.
             </p>

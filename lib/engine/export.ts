@@ -11,11 +11,11 @@ function escapeCsv(value: string): string {
   return value;
 }
 
-export function toCsv(columns: ExportColumn[], candidates: Candidate[]): string {
+export function toCsv(columns: ExportColumn[], candidates: Candidate[], currency: string): string {
   const header = columns.map((c) => escapeCsv(c.header)).join(",");
   const rows = candidates.map((cand) =>
     columns
-      .map((col) => escapeCsv(col.get(cand.customer, cand.expectedValue)))
+      .map((col) => escapeCsv(col.get(cand.customer, cand.expectedValue, currency)))
       .join(",")
   );
   return [header, ...rows].join("\r\n");
@@ -52,7 +52,7 @@ export async function exportPlay(
   await assertExportRateLimit(store.id);
 
   const { candidates } = await evaluatePlay(play, store);
-  const csv = toCsv(play.exportColumns, candidates);
+  const csv = toCsv(play.exportColumns, candidates, store.currency);
   const exportedAt = new Date();
 
   await prisma.$transaction([

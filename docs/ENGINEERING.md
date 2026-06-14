@@ -109,6 +109,47 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
+### 2026-06-14 — Per-store display currency
+- **What.** Money now renders in each store's own currency instead of a hardcoded `$`. New
+  `Store.currency` (ISO 4217, default `USD`), auto-captured from Shopify `shop.json` at the top
+  of `backfillStore` (runs on install + every "Sync from Shopify", so existing stores backfill
+  on next sync). New `lib/money.ts` `formatMoney(amount, currency, { decimals })` using
+  `Intl.NumberFormat` with `narrowSymbol`. Threaded through every merchant-facing money site:
+  dashboard, customers (list + detail), winback, reports, inventory, attribution, returns,
+  scores, recommendations (list + detail), search page, command palette, and play CSV exports
+  (`ExportColumn.get` gained a `currency` arg; `toCsv`/`exportPlay`/export-all pass `store.currency`).
+- **Why.** Merchants aren't all USD (CAD/EUR/GBP/…). Amounts were already stored in the shop's
+  currency, so this is display formatting only — no FX conversion.
+- **Scope notes.** Billing page stays USD (that's Altvary's own subscription price, not store
+  sales). `/api/exports/[type]` CSVs keep bare numbers (spreadsheet-friendly). Static demo
+  numbers in `notifications`/`Topbar` left as-is (not real store data).
+- **Schema.** Additive (one nullable-defaulted column). Applied to prod via `prisma db push`
+  on 2026-06-15 — both existing stores backfilled to `USD`.
+- **Verification.** `npx tsc --noEmit` clean; `npm run build` clean (all routes compiled);
+  Prisma client regenerated; `Store.currency` confirmed in prod (`text default 'USD'`).
+
+### 2026-06-14 — Merchant-tunable RFME weights (Settings sliders)
+- **What.** Merchants can now set the RFME composite weights themselves via sliders in
+  Settings → RFME configuration. New `ScoringConfig` model (per-store `wR/wF/wM/wE` points,
+  `@unique storeId`); `runScoring` reads them through a new `getStoreWeights()` that normalizes
+  the points to sum to 1 (no row ⇒ defaults R35/F25/M25/E15). New `updateWeights` server action
+  upserts the config; new client component `WeightSliders.tsx` shows live normalized %.
+- **Why.** "Beauty" isn't one scoring philosophy — a high-ticket LED-mask brand should weight
+  Monetary heavily; a fast-moving sheet-mask brand should weight Recency/Frequency. A single
+  global weight set served neither (first Stage-2 piece; see `docs/dev/stage-2-plan.md`).
+- **Schema.** Additive only (new `ScoringConfig` table + nullable `ScoringRun.weights`). Applied
+  to prod via `prisma db push` on 2026-06-15 (defaults `wR=35/wF=25/wM=25/wE=15` confirmed;
+  0 config rows ⇒ engine falls back to defaults until a merchant tunes).
+- **Verification.** `npx tsc --noEmit` clean; `npm run build` clean (`/settings` + `WeightSliders`
+  compiled); Prisma client regenerated; `ScoringConfig`/`ScoringRun.weights` confirmed in prod.
+  Interactive slider walkthrough not done (app is Supabase-auth-gated against prod; build is the
+  auth-free substitute).
+- **R04 rebaseline guard (built).** A weight change re-shapes scores on the next run, which would
+  otherwise fire spurious R04 (VIP score-drop) alerts off the rebaseline. Each `ScoringRun` is now
+  tagged with `weightsKey(W)` (a stable signature of its normalized weights); `signals.ts` detects
+  run-over-run boundaries where the signature changed (`rebaselineAt`/`straddlesRebaseline`) and
+  suppresses score drops measured across them, so R04 can't fire off a rebaseline run.
+
 ### 2026-06-13 — Remove internal MVP/post-MVP copy from merchant UI · `e2ec690`
 - "MVP", "post-MVP", "unlock in the full release" etc. were leaking into ~13 merchant-facing pages.
   Replaced with merchant-friendly wording ("coming soon" / plain statements of what's live).

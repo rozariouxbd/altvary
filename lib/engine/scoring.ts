@@ -3,8 +3,40 @@ import { prisma } from "../prisma";
 
 const DAY = 86_400_000;
 
-/** RFME composite weights (match the customer-detail UI). */
-const W = { r: 0.35, f: 0.25, m: 0.25, e: 0.15 };
+/** Default RFME weight points when a store has no ScoringConfig row. */
+const DEFAULT_WEIGHT_POINTS = { wR: 35, wF: 25, wM: 25, wE: 15 };
+
+/**
+ * Resolve a store's RFME weights as fractions that sum to 1. Merchants set raw
+ * points (0–100) per axis in Settings; we normalize here so the composite stays
+ * on a 0–100 scale regardless of what the sliders add up to. Falls back to the
+ * defaults when no config exists or the points sum to 0.
+ */
+export async function getStoreWeights(
+  storeId: string
+): Promise<{ r: number; f: number; m: number; e: number }> {
+  const cfg = (await prisma.scoringConfig.findUnique({ where: { storeId } })) ?? DEFAULT_WEIGHT_POINTS;
+  const sum = cfg.wR + cfg.wF + cfg.wM + cfg.wE;
+  if (sum <= 0) {
+    const d = DEFAULT_WEIGHT_POINTS;
+    const dsum = d.wR + d.wF + d.wM + d.wE;
+    return { r: d.wR / dsum, f: d.wF / dsum, m: d.wM / dsum, e: d.wE / dsum };
+  }
+  return { r: cfg.wR / sum, f: cfg.wF / sum, m: cfg.wM / sum, e: cfg.wE / sum };
+}
+
+/**
+ * Stable signature of the normalized weights a scoring run used, stored on
+ * ScoringRun.weights. Two runs with the same merchant weights produce the same
+ * key; any slider change produces a different one. signals.ts compares
+ * consecutive runs' keys to find the run that rebaselined every score, so it
+ * can suppress the artificial score drops that straddle a weight change (which
+ * would otherwise fire false R04 VIP-churn alerts).
+ */
+export function weightsKey(w: { r: number; f: number; m: number; e: number }): string {
+  const q = (n: number) => n.toFixed(4);
+  return `r${q(w.r)}|f${q(w.f)}|m${q(w.m)}|e${q(w.e)}`;
+}
 
 /** How many days of ScoreHistory snapshots to retain after each run (see prune below). */
 const SCORE_HISTORY_RETENTION_DAYS = 30;
@@ -81,7 +113,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       });
 
   try {
-    const [customers, orders] = await Promise.all([
+    const [customers, orders, W] = await Promise.all([
       prisma.customer.findMany({
         where: { storeId: store.id },
         select: { id: true, totalSpent: true, orderCount: true, lastOrderAt: true },
@@ -90,6 +122,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         where: { storeId: store.id },
         select: { customerId: true, createdAt: true },
       }),
+      getStoreWeights(store.id),
     ]);
 
     const now = Date.now();
@@ -197,7 +230,12 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
 
     await prisma.scoringRun.update({
       where: { id: run!.id },
-      data: { status: "complete", scored: scored.length, finishedAt: new Date() },
+      data: {
+        status: "complete",
+        scored: scored.length,
+        finishedAt: new Date(),
+        weights: weightsKey(W),
+      },
     });
 
     return { runId: run!.id, scored: scored.length, segments, dryRun: false };

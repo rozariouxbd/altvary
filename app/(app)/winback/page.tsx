@@ -2,6 +2,7 @@ import Link from "next/link";
 import Topbar from "../../components/Topbar";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
+import { formatMoney } from "../../../lib/money";
 import { evaluatePlay } from "../../../lib/engine/evaluate";
 import { computeSignals } from "../../../lib/engine/signals";
 import { R02 } from "../../../lib/engine/plays/r02";
@@ -12,6 +13,7 @@ export default async function WinbackPage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const store = await getCurrentStore();
+  const currency = store?.currency ?? "USD";
   const signals = store ? await computeSignals(store.id) : new Map();
   const res = store
     ? await evaluatePlay(R02, store, signals)
@@ -31,9 +33,9 @@ export default async function WinbackPage({ searchParams }: { searchParams: Prom
 
   const stats = [
     { l: "Candidates", v: res.candidateCount.toLocaleString() },
-    { l: "Recoverable", v: `$${res.projectedRevenue.toLocaleString()}` },
-    { l: "Avg LTV", v: `$${avgLtv.toFixed(2)}` },
-    { l: "Avg expected lift", v: cands.length ? `$${Math.round(res.projectedRevenue / cands.length)}` : "—" },
+    { l: "Recoverable", v: formatMoney(res.projectedRevenue, currency) },
+    { l: "Avg LTV", v: formatMoney(avgLtv, currency, { decimals: 2 }) },
+    { l: "Avg expected lift", v: cands.length ? formatMoney(Math.round(res.projectedRevenue / cands.length), currency) : "—" },
   ];
 
   return (
@@ -47,7 +49,7 @@ export default async function WinbackPage({ searchParams }: { searchParams: Prom
         <div className="page-head">
           <div>
             <h1 className="page-title">Winback — {res.candidateCount} candidate{res.candidateCount === 1 ? "" : "s"}</h1>
-            <p className="page-sub">At-risk &amp; churning customers past their repurchase cycle · ${res.projectedRevenue.toLocaleString()} recoverable</p>
+            <p className="page-sub">At-risk &amp; churning customers past their repurchase cycle · {formatMoney(res.projectedRevenue, currency)} recoverable</p>
           </div>
           <div className="page-head-actions">
             <Link href="/suppression" className="btn btn-ghost btn-sm"><i className="ti ti-ban"></i> Suppression list</Link>
@@ -113,7 +115,7 @@ export default async function WinbackPage({ searchParams }: { searchParams: Prom
                           <td className="hide-mobile"><span className={`tag ${c.segment === "churning" ? "neg" : "warn"}`}>{c.segment === "churning" ? "Churning" : "At risk"}</span></td>
                           <td style={{ fontFamily: "var(--mono)", fontSize: 13 }}>{sig ? `${sig.daysSinceLastOrder}d` : "—"}</td>
                           <td style={{ fontFamily: "var(--mono)", fontSize: 13 }}>{sig?.cycleDays != null ? `${sig.cycleDays}d` : "—"}</td>
-                          <td style={{ fontFamily: "var(--mono)", fontSize: 13 }}>${c.totalSpent.toLocaleString()}</td>
+                          <td style={{ fontFamily: "var(--mono)", fontSize: 13 }}>{formatMoney(c.totalSpent, currency)}</td>
                           <td>
                             <span className={`score ${segCls}`}>
                               <span className="v">{Math.round(c.rfmeScore ?? 0)}</span>
@@ -170,10 +172,10 @@ export default async function WinbackPage({ searchParams }: { searchParams: Prom
                   ))}
                   <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
                     {[
-                      { k: "LTV", v: `$${top.customer.totalSpent.toLocaleString()}` },
-                      { k: "Avg order", v: `$${(top.customer.orderCount > 0 ? top.customer.totalSpent / top.customer.orderCount : 0).toFixed(2)}` },
+                      { k: "LTV", v: formatMoney(top.customer.totalSpent, currency) },
+                      { k: "Avg order", v: formatMoney(top.customer.orderCount > 0 ? top.customer.totalSpent / top.customer.orderCount : 0, currency, { decimals: 2 }) },
                       { k: "Days overdue", v: topSig?.dueInDays != null && topSig.dueInDays < 0 ? `${Math.abs(topSig.dueInDays)}d` : "—", warn: true },
-                      { k: "Expected lift", v: `+$${top.expectedValue}` },
+                      { k: "Expected lift", v: `+${formatMoney(top.expectedValue, currency)}` },
                     ].map((s, i) => (
                       <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12.5px", paddingBottom: 8, borderBottom: i < 3 ? "1px solid var(--line)" : "none" }}>
                         <span style={{ color: "var(--muted)" }}>{s.k}</span>

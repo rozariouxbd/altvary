@@ -3,6 +3,7 @@ import Topbar from "../../components/Topbar";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { REGISTRY } from "../../../lib/engine/plays";
+import { formatMoney } from "../../../lib/money";
 
 const SEG_TAG: Record<string, string> = { vip: "pos", returning: "acc", at_risk: "warn", churning: "neg", lost: "" };
 
@@ -16,6 +17,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const { q } = await searchParams;
   const query = (q ?? "").trim();
   const store = await getCurrentStore();
+  const currency = store?.currency ?? "USD";
 
   let customers: Awaited<ReturnType<typeof prisma.customer.findMany>> = [];
   let products: Awaited<ReturnType<typeof prisma.product.findMany>> = [];
@@ -80,7 +82,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                     <span className="av">{initials(c.firstName, c.lastName, c.email)}</span>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{`${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || c.email}</div>
-                      <div style={{ fontSize: "11.5px", color: "var(--muted)" }}>{c.email} · {c.orderCount} orders · ${c.totalSpent.toLocaleString()}</div>
+                      <div style={{ fontSize: "11.5px", color: "var(--muted)" }}>{c.email} · {c.orderCount} orders · {formatMoney(c.totalSpent, currency)}</div>
                     </div>
                     <span className={`tag ${SEG_TAG[c.segment ?? ""] ?? ""}`}>{c.segment ?? "—"}</span>
                     <i className="ti ti-arrow-right" style={{ color: "var(--faint)" }}></i>
@@ -97,7 +99,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                     <i className="ti ti-box" style={{ fontSize: 18, color: "var(--muted)" }}></i>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{p.title}</div>
-                      <div style={{ fontSize: "11.5px", color: "var(--muted)" }}>SKU {p.sku || "—"} · {p.inventoryQty} in stock · ${p.price.toFixed(2)}</div>
+                      <div style={{ fontSize: "11.5px", color: "var(--muted)" }}>SKU {p.sku || "—"} · {p.inventoryQty} in stock · {formatMoney(p.price, currency, { decimals: 2 })}</div>
                     </div>
                     <span className={`tag ${p.inventoryQty === 0 ? "neg" : p.inventoryQty <= 20 ? "warn" : "pos"}`}>{p.inventoryQty === 0 ? "Out" : p.inventoryQty <= 20 ? "Low" : "OK"}</span>
                     <i className="ti ti-arrow-right" style={{ color: "var(--faint)" }}></i>

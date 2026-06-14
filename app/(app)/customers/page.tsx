@@ -1,5 +1,6 @@
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
+import { formatMoney } from "../../../lib/money";
 import type { Prisma } from "@prisma/client";
 import CustomersView, { type CustomerRow } from "./CustomersView";
 
@@ -34,6 +35,7 @@ type SP = Record<string, string | undefined>;
 export default async function CustomersPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const store = await getCurrentStore();
+  const currency = store?.currency ?? "USD";
 
   const segment = sp.segment && SHORT_TO_DB[sp.segment] ? sp.segment : "all";
   const q = (sp.q ?? "").trim();
@@ -93,7 +95,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       name,
       sub: `${c.orderCount} order${c.orderCount === 1 ? "" : "s"} · ${c.email}`,
       last: fmtDate(c.lastOrderAt),
-      ltv: `$${(c.totalSpent ?? 0).toLocaleString()}`,
+      ltv: formatMoney(c.totalSpent ?? 0, currency),
       score: Math.round(c.rfmeScore ?? 0),
       action: SEG_ACTION[seg] ?? "—",
     };

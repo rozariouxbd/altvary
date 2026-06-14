@@ -2,6 +2,7 @@ import Link from "next/link";
 import Topbar from "../../components/Topbar";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
+import { formatMoney } from "../../../lib/money";
 import { evaluateAll } from "../../../lib/engine/evaluate";
 import type { Customer } from "@prisma/client";
 
@@ -37,6 +38,7 @@ function initials(c: Customer): string {
 
 export default async function DashboardPage() {
   const store = await getCurrentStore();
+  const currency = store?.currency ?? "USD";
   const customers = store ? await prisma.customer.findMany({ where: { storeId: store.id } }) : [];
   const total = customers.length;
   const results = store ? await evaluateAll(store) : [];
@@ -86,8 +88,8 @@ export default async function DashboardPage() {
 
         {/* KPIs */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, marginBottom: 18 }}>
-          <KpiCard dot="neg" label="Revenue at risk" value={`$${revenueAtRisk.toLocaleString()}`} ctx={`${atRisk.length} at-risk customer${atRisk.length === 1 ? "" : "s"}`} />
-          <KpiCard dot="pos" label="Recoverable now" value={`$${recoverable.toLocaleString()}`} ctx={`Across ${results.length} active plays`} />
+          <KpiCard dot="neg" label="Revenue at risk" value={formatMoney(revenueAtRisk, currency)} ctx={`${atRisk.length} at-risk customer${atRisk.length === 1 ? "" : "s"}`} />
+          <KpiCard dot="pos" label="Recoverable now" value={formatMoney(recoverable, currency)} ctx={`Across ${results.length} active plays`} />
           <KpiCard dot="acc" label="Avg RFME score" value={avgScore.toFixed(1)} ctx="0–100 composite" />
         </div>
 
@@ -157,7 +159,7 @@ export default async function DashboardPage() {
                           <span className="av">{initials(c)}</span>
                           <div>
                             <div className="nm">{`${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || c.email}</div>
-                            <div className="sub">{c.orderCount} order{c.orderCount === 1 ? "" : "s"} · ${c.totalSpent.toLocaleString()}</div>
+                            <div className="sub">{c.orderCount} order{c.orderCount === 1 ? "" : "s"} · {formatMoney(c.totalSpent, currency)}</div>
                           </div>
                         </div>
                       </td>

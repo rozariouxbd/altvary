@@ -1,4 +1,5 @@
 import type { PlayDefinition } from "../types";
+import { formatMoney } from "../../money";
 
 /**
  * R08 — Cross-sell cohort.
@@ -32,6 +33,6 @@ export const R08: PlayDefinition = {
     { key: "name", header: "Name", get: (c) => `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() },
     { key: "orderCount", header: "Orders", get: (c) => String(c.orderCount) },
     { key: "totalSpent", header: "Lifetime value", get: (c) => c.totalSpent.toFixed(2) },
-    { key: "attachValue", header: "Attach value", get: (c, v) => `$${v}` },
+    { key: "attachValue", header: "Attach value", get: (_c, v, cur) => formatMoney(v, cur) },
   ],
 };

@@ -1,4 +1,5 @@
 import type { PlayDefinition } from "../types";
+import { formatMoney } from "../../money";
 
 /** A VIP score fall of this many points over ~7 days is a genuine warning. */
 const DROP_THRESHOLD = 8;
@@ -38,6 +39,6 @@ export const R04: PlayDefinition = {
     { key: "name", header: "Name", get: (c) => `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() },
     { key: "totalSpent", header: "Lifetime value", get: (c) => c.totalSpent.toFixed(2) },
     { key: "rfmeScore", header: "RFME score", get: (c) => String(Math.round(c.rfmeScore ?? 0)) },
-    { key: "atRisk", header: "LTV at risk", get: (c, v) => `$${v}` },
+    { key: "atRisk", header: "LTV at risk", get: (_c, v, cur) => formatMoney(v, cur) },
   ],
 };

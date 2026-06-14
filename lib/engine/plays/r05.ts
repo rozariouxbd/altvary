@@ -1,4 +1,5 @@
 import type { PlayDefinition } from "../types";
+import { formatMoney } from "../../money";
 
 /**
  * R05 — Repurchase timing.
@@ -38,6 +39,6 @@ export const R05: PlayDefinition = {
     { key: "name", header: "Name", get: (c) => `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() },
     { key: "lastOrderAt", header: "Last order", get: (c) => c.lastOrderAt?.toISOString().slice(0, 10) ?? "" },
     { key: "orderCount", header: "Orders", get: (c) => String(c.orderCount) },
-    { key: "expectedOrder", header: "Expected order", get: (c, v) => `$${v}` },
+    { key: "expectedOrder", header: "Expected order", get: (_c, v, cur) => formatMoney(v, cur) },
   ],
 };

@@ -4,6 +4,7 @@ import { getCurrentStore } from "../../../../lib/auth";
 import { getPlay } from "../../../../lib/engine/plays";
 import { evaluatePlay } from "../../../../lib/engine/evaluate";
 import { computeSignals } from "../../../../lib/engine/signals";
+import { formatMoney } from "../../../../lib/money";
 import type { Customer } from "@prisma/client";
 import type { CustomerSignal, PlayStatus } from "../../../../lib/engine/types";
 import ExportButton from "./ExportButton";
@@ -30,15 +31,15 @@ const LAYER_LABEL: Record<string, string> = {
 };
 
 /** Per-play "why this customer" context line, drawn from order/score signals. */
-function signalText(playId: string, c: Customer, s?: CustomerSignal): string {
+function signalText(playId: string, c: Customer, s: CustomerSignal | undefined, currency: string): string {
   switch (playId) {
     case "R02": return s ? `${s.daysSinceLastOrder}d dormant` : "—";
     case "R04":
       return s?.scoreDrop7d != null ? `score ↓${s.scoreDrop7d} (was ${s.prevScore7d})` : "—";
     case "R05":
       return s?.cycleDays != null ? `${s.cycleDays}d cycle · ${s.daysSinceLastOrder}d since` : "—";
-    case "R07": return `1st order $${c.totalSpent.toFixed(0)}`;
-    case "R08": return `${c.orderCount} orders · $${c.totalSpent.toFixed(0)} LTV`;
+    case "R07": return `1st order ${formatMoney(c.totalSpent, currency)}`;
+    case "R08": return `${c.orderCount} orders · ${formatMoney(c.totalSpent, currency)} LTV`;
     default: return "—";
   }
 }
@@ -83,6 +84,7 @@ export default async function PlayDetailPage({ params }: { params: Promise<{ id:
     );
   }
 
+  const currency = store.currency;
   const signals = await computeSignals(store.id);
   const result = await evaluatePlay(play, store, signals);
   const status = STATUS_TAG[result.status];
@@ -111,8 +113,8 @@ export default async function PlayDetailPage({ params }: { params: Promise<{ id:
           <div style={{ display: "flex", gap: 30, marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--line-soft)" }}>
             {[
               { v: result.candidateCount.toLocaleString(), l: "Candidates" },
-              { v: `$${result.projectedRevenue.toLocaleString()}`, l: "Projected revenue" },
-              { v: result.candidateCount ? `$${Math.round(result.projectedRevenue / result.candidateCount)}` : "—", l: "Avg expected lift" },
+              { v: formatMoney(result.projectedRevenue, currency), l: "Projected revenue" },
+              { v: result.candidateCount ? formatMoney(Math.round(result.projectedRevenue / result.candidateCount), currency) : "—", l: "Avg expected lift" },
             ].map((s, i) => (
               <div key={i}>
                 <div style={{ fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600, letterSpacing: "-.02em" }}>{s.v}</div>
@@ -167,7 +169,7 @@ export default async function PlayDetailPage({ params }: { params: Promise<{ id:
                       </td>
                       <td><span className={`tag ${seg.cls}`}>{seg.label}</span></td>
                       <td style={{ textAlign: "right", fontFamily: "var(--mono)", fontWeight: 600 }}>{Math.round(c.rfmeScore ?? 0)}</td>
-                      <td style={{ fontSize: "12.5px", color: "var(--ink-2)" }}>{signalText(play.code, c, signals.get(c.id))}</td>
+                      <td style={{ fontSize: "12.5px", color: "var(--ink-2)" }}>{signalText(play.code, c, signals.get(c.id), currency)}</td>
                       <td style={{ textAlign: "right", fontFamily: "var(--mono)", fontWeight: 700, color: "var(--pos)" }}>+${expectedValue}</td>
                     </tr>
                   );

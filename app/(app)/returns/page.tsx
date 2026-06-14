@@ -3,6 +3,7 @@ import RangeTabs from "../../components/RangeTabs";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { asRange, rangeSince, rangeLabel } from "../../../lib/filters";
+import { formatMoney } from "../../../lib/money";
 
 function fmtDate(d: Date): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -18,6 +19,7 @@ export default async function ReturnsPage({ searchParams }: { searchParams: Prom
   const since = rangeSince(range);
   const dateFilter = since ? { createdAt: { gte: since } } : {};
   const store = await getCurrentStore();
+  const currency = store?.currency ?? "USD";
   const [totalOrders, returned] = store ? await Promise.all([
     prisma.order.count({ where: { storeId: store.id, ...dateFilter } }),
     prisma.order.findMany({
@@ -56,7 +58,7 @@ export default async function ReturnsPage({ searchParams }: { searchParams: Prom
             { l: "Returns", v: returned.length.toLocaleString() },
             { l: "Return rate", v: `${returnRate.toFixed(1)}%`, color: returnRate > 5 ? "var(--warn)" : undefined },
             { l: "Customers affected", v: affectedCustomers.toLocaleString() },
-            { l: "Returned order value", v: `$${returnedValue.toLocaleString()}`, color: returned.length ? "var(--neg)" : undefined },
+            { l: "Returned order value", v: formatMoney(returnedValue, currency), color: returned.length ? "var(--neg)" : undefined },
           ].map((s, i) => (
             <div key={i} className="card" style={{ padding: "18px 20px" }}>
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, fontWeight: 600 }}>{s.l}</div>
@@ -85,7 +87,7 @@ export default async function ReturnsPage({ searchParams }: { searchParams: Prom
                         <td><div className="who"><span className="av">{initials(c.firstName, c.lastName, c.email)}</span><div><div className="nm">{`${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || c.email}</div><div className="sub">{c.email}</div></div></div></td>
                         <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)" }}>#{o.id.slice(-6)}</td>
                         <td className="hide-tablet" style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--muted)" }}>{fmtDate(o.createdAt)}</td>
-                        <td style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, textAlign: "right", color: "var(--neg)" }}>${o.totalPrice.toFixed(2)}</td>
+                        <td style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, textAlign: "right", color: "var(--neg)" }}>{formatMoney(o.totalPrice, currency, { decimals: 2 })}</td>
                         <td className="hide-mobile"><span className="tag">{c.segment ?? "—"}</span></td>
                         <td style={{ textAlign: "right" }}><a href={`/customers/${c.id}`} className="btn btn-plain btn-sm" style={{ color: "var(--accent-ink)" }}>View →</a></td>
                       </tr>

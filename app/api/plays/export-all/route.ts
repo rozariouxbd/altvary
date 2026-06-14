@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { evaluateAll } from "../../../../lib/engine/evaluate";
 import { getCurrentStore } from "../../../../lib/auth";
+import { formatMoney } from "../../../../lib/money";
 
 function esc(v: string): string {
   return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
@@ -28,7 +29,7 @@ export async function GET() {
       c.customer.email,
       c.customer.segment ?? "",
       String(Math.round(c.customer.rfmeScore ?? 0)),
-      `$${c.expectedValue}`,
+      formatMoney(c.expectedValue, store.currency),
     ])
   );
 

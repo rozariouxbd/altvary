@@ -3,6 +3,7 @@ import Topbar from "../../components/Topbar";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { computeSignals } from "../../../lib/engine/signals";
+import { formatMoney } from "../../../lib/money";
 import type { CustomerSignal } from "../../../lib/engine/types";
 
 const SEG = [
@@ -17,6 +18,7 @@ const SEG_LABEL: Record<string, string> = { vip: "VIP", returning: "Returning", 
 
 export default async function ScoresPage() {
   const store = await getCurrentStore();
+  const currency = store?.currency ?? "USD";
   const signals = store ? await computeSignals(store.id) : new Map<string, CustomerSignal>();
 
   // Counts + average via DB aggregates — never loads the customer table.
@@ -167,7 +169,7 @@ export default async function ScoresPage() {
                           <td><div className="who"><span className="av">{(c.firstName?.[0] ?? "") + (c.lastName?.[0] ?? "")}</span><div><div className="nm">{`${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || c.email}</div><div className="sub">{c.orderCount} orders</div></div></div></td>
                           <td><span className={`score ${segCls}`}><span className="v">{Math.round(c.rfmeScore ?? 0)}</span><span className="bar"><span className="fill" style={{ width: `${Math.round(c.rfmeScore ?? 0)}%` }}></span></span></span></td>
                           <td className="hide-mobile" style={{ color: "var(--neg)", fontFamily: "var(--mono)", fontSize: 13 }}>{sig?.scoreDrop7d != null && sig.scoreDrop7d !== 0 ? `−${sig.scoreDrop7d}` : "—"}</td>
-                          <td style={{ textAlign: "right" }}><span className="num">${c.totalSpent.toLocaleString()}</span></td>
+                          <td style={{ textAlign: "right" }}><span className="num">{formatMoney(c.totalSpent, currency)}</span></td>
                           <td style={{ textAlign: "right" }}><Link href={`/customers/${c.id}`} className="btn btn-plain btn-sm" style={{ color: "var(--accent-ink)" }}>View →</Link></td>
                         </tr>
                       );

@@ -3,6 +3,7 @@ import { prisma } from "../../../../lib/prisma";
 import { getCurrentStore } from "../../../../lib/auth";
 import { computeSignals } from "../../../../lib/engine/signals";
 import { evaluateAll } from "../../../../lib/engine/evaluate";
+import { formatMoney } from "../../../../lib/money";
 
 const SEG_TAG: Record<string, { cls: string; label: string }> = {
   vip: { cls: "pos", label: "VIP" },
@@ -72,12 +73,13 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   const seg = SEG_TAG[customer.segment ?? ""] ?? { cls: "", label: customer.segment ?? "—" };
   const score = Math.round(customer.rfmeScore ?? 0);
   const avgOrder = customer.orderCount > 0 ? customer.totalSpent / customer.orderCount : 0;
+  const currency = store?.currency ?? "USD";
   const name = `${customer.firstName ?? ""} ${customer.lastName ?? ""}`.trim() || customer.email;
 
   const rfme = [
     { dim: "R", label: "Recency", sub: sig ? `${sig.daysSinceLastOrder}d since last order` : "—", weight: "×0.35", val: Math.round(customer.rfmeR ?? 0) },
     { dim: "F", label: "Frequency", sub: `${customer.orderCount} orders lifetime`, weight: "×0.25", val: Math.round(customer.rfmeF ?? 0) },
-    { dim: "M", label: "Monetary", sub: `$${avgOrder.toFixed(0)} avg order`, weight: "×0.25", val: Math.round(customer.rfmeM ?? 0) },
+    { dim: "M", label: "Monetary", sub: `${formatMoney(avgOrder, currency)} avg order`, weight: "×0.25", val: Math.round(customer.rfmeM ?? 0) },
     { dim: "E", label: "Engagement", sub: sig?.cycleDays != null ? `${sig.cycleDays}d cycle` : "order cadence", weight: "×0.15", val: Math.round(customer.rfmeE ?? 0) },
   ];
 
@@ -117,8 +119,8 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
         <div className="card" style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr 1fr 1fr 1fr", gap: 0, marginBottom: 20 }}>
           {[
             { l: "RFME Score", v: null, score: true },
-            { l: "LTV", v: `$${customer.totalSpent.toLocaleString()}` },
-            { l: "Avg order", v: `$${avgOrder.toFixed(0)}` },
+            { l: "LTV", v: formatMoney(customer.totalSpent, currency) },
+            { l: "Avg order", v: formatMoney(avgOrder, currency) },
             { l: "Last order", v: fmtDate(customer.lastOrderAt) },
             { l: "Orders", v: String(customer.orderCount) },
           ].map((it, i) => (
@@ -160,7 +162,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 
             {/* Order history */}
             <div className="card">
-              <div className="card-head"><div><div className="card-title">Order history</div><div className="card-sub">{customer.orderCount} orders · ${customer.totalSpent.toLocaleString()} total</div></div></div>
+              <div className="card-head"><div><div className="card-title">Order history</div><div className="card-sub">{customer.orderCount} orders · {formatMoney(customer.totalSpent, currency)} total</div></div></div>
               {customer.orders.length === 0 ? (
                 <div style={{ padding: "22px 20px", color: "var(--muted)", fontSize: 13 }}>No orders on record.</div>
               ) : customer.orders.map((o, i) => (
@@ -170,7 +172,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                     <div style={{ fontSize: 13, fontWeight: 600 }}>Order {o.id.slice(-6)}</div>
                     <div style={{ fontSize: "11.5px", color: "var(--muted)" }}>{fmtDate(o.createdAt)}</div>
                   </div>
-                  <div style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600 }}>${o.totalPrice.toFixed(2)}</div>
+                  <div style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600 }}>{formatMoney(o.totalPrice, currency, { decimals: 2 })}</div>
                   <span className={o.refunded ? "tag neg" : "tag pos"}>{o.refunded ? "Refunded" : "Paid"}</span>
                 </div>
               ))}
