@@ -50,6 +50,8 @@ What remains is mostly listing content + two config toggles — no core engineer
 
 ---
 
+> 📄 **Paste-ready listing copy, captions, and reviewer notes live in [`app-store-listing.md`](app-store-listing.md).**
+
 ## 🖼️ Listing assets (you create the images)
 - [ ] **App icon** — 1200×1200 px, no text
 - [ ] **Feature image** — 1600×900 px (listing banner)
