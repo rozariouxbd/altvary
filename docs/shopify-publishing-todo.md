@@ -40,10 +40,13 @@ What remains is mostly listing content + two config toggles — no core engineer
 - [ ] Confirm a real "uninstall" fires `shop/redact` and wipes the store (test by uninstalling from a throwaway store)
 
 ## 🧹 UI polish (merchant-facing, not blocking)
-- [ ] **Integrations page is still a mock** (`app/(app)/integrations/page.tsx`) — hardcoded
-      `glowskinco.myshopify.com` + fake stats (24,180 events, 100% webhook success). Make it live:
-      show the real connected Shopify shop domain + real webhook/event counts, or simplify to a
-      truthful "Shopify connected" state. (Copy was already de-jargoned; the data is the issue.)
+- [x] **Integrations page made live** (`app/(app)/integrations/page.tsx`, 2026-06-15) — was a mock
+      (hardcoded `glowskinco.myshopify.com`, fake 24,180 events / 100% webhook success, fabricated
+      "Shopify Payments" connection, "Glow Botanics" footer). Now a server component on
+      `getCurrentStore()`: real connected shop domain, real synced volumes (customers/orders),
+      last scoring-run time, and a truthful single-Shopify connected state. No webhook/event-log
+      model exists, so the unverifiable event metrics were replaced with real synced counts rather
+      than invented. Empty (no-store) state links to `/connect`.
 
 ---
 

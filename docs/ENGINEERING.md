@@ -109,6 +109,22 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
+### 2026-06-15 — Integrations page: real data instead of mock
+- **What.** `/integrations` was a static client component with fabricated data (hardcoded
+  `glowskinco.myshopify.com`, fake "24,180 events / 100% webhook success", a fabricated separate
+  "Shopify Payments" connection, "Glow Botanics" footer). Rewrote it as an async server component
+  on `getCurrentStore()`: shows the real connected shop domain, real synced volumes (customer +
+  order counts), the last completed scoring-run time, and a single truthful "Shopify connected"
+  card. Added a no-store empty state linking to `/connect`. Route flips from `○` static to `ƒ`.
+- **Why.** Real merchants saw another store's name and invented metrics — a credibility/trust risk
+  flagged in `docs/shopify-publishing-todo.md`. Last remaining code item before App Store assets.
+- **Decision — no invented metrics.** There is no webhook/event-log model, so "Events/24h" and
+  "Webhook success %" had no real source. Rather than fabricate or add a logging table just for a
+  display tile, those tiles were replaced with metrics we actually have (Customers/Orders synced,
+  Last scored). Revisit if a webhook-delivery log is added later.
+- **Verification.** `npx tsc --noEmit` clean; `npm run build` clean (`/integrations` compiles as
+  `ƒ`). Live browser walkthrough not done (auth-gated, no session creds available here).
+
 ### 2026-06-14 — Per-store display currency · `15c66d8`
 - **What.** Money now renders in each store's own currency instead of a hardcoded `$`. New
   `Store.currency` (ISO 4217, default `USD`), auto-captured from Shopify `shop.json` at the top
