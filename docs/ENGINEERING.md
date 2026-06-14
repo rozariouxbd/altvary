@@ -109,7 +109,7 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
-### 2026-06-15 — Integrations page: real data instead of mock
+### 2026-06-15 — Integrations page: real data instead of mock · `040b862`
 - **What.** `/integrations` was a static client component with fabricated data (hardcoded
   `glowskinco.myshopify.com`, fake "24,180 events / 100% webhook success", a fabricated separate
   "Shopify Payments" connection, "Glow Botanics" footer). Rewrote it as an async server component
