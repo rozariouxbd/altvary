@@ -130,7 +130,7 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
-### 2026-06-15 — Register data webhooks on backfill (fixes dev-store real-time gap) · `_______`
+### 2026-06-15 — Register data webhooks on backfill (fixes dev-store real-time gap) · `ee20546`
 - **What.** `backfillStore` now calls `registerWebhooks` (idempotent) right after fetching the
   token. Previously webhook registration lived *only* in the OAuth callback, so the org dev store
   (`altvary-store.myshopify.com`, `tokenType=client_credentials`, connected without the auth-code
