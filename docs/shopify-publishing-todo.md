@@ -34,6 +34,14 @@ What remains is mostly listing content + two config toggles — no core engineer
       (verify they're saved in the active version)
 
 ## 🔐 Pre-launch hardening
+- [ ] **Verify the live Klaviyo round-trip** (shipped 2026-06-15, `5303793`, but not yet exercised
+      end-to-end). Steps: Settings → Klaviyo sync → paste a real Klaviyo **private API key** (the
+      key is validated before saving) → place a test order on the connected store → confirm
+      `altvary_last_order_at` updates on that customer's Klaviyo profile within seconds (webhook
+      freshness override) → run a scoring recompute (Settings → Recompute now) → confirm
+      `altvary_rfme_score` + `altvary_lifecycle_tier` populate across profiles (nightly bulk
+      reconciliation). ⚠️ All Klaviyo calls are intentionally **best-effort / non-fatal**, so a bad
+      key or wrong scope fails *silently* — this manual check is the only thing that proves it works.
 - [ ] Flip `SHOPIFY_BILLING_TEST=false` only if/when charging real money (keep free for now → leave billing disabled)
 - [ ] Rotate the Shopify API secret if it was ever shared in plaintext; confirm Vercel env matches
 - [ ] Replace the manually-set test password on `alextheous@gmail.com` with proper magic-link login once SMTP is live
