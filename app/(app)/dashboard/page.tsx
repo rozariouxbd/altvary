@@ -36,7 +36,8 @@ function initials(c: Customer): string {
   return (c.email[0] ?? "?").toUpperCase();
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ notice?: string }> }) {
+  const sp = await searchParams;
   const store = await getCurrentStore();
   const currency = store?.currency ?? "USD";
   const customers = store ? await prisma.customer.findMany({ where: { storeId: store.id } }) : [];
@@ -68,6 +69,12 @@ export default async function DashboardPage() {
       <Topbar title="Dashboard" sub={`Live · ${total.toLocaleString()} customers scored`} search="Search customers, SKUs, recommendations…" cta={{ icon: "ti-refresh", label: "Sync from Shopify", href: "/api/shopify/sync?return=/dashboard" }} />
 
       <main className="page">
+        {sp.notice === "sync-started" && (
+          <div className="note" style={{ marginBottom: 16, background: "var(--accent-soft)", borderColor: "transparent" }}>
+            <i className="ti ti-refresh" style={{ color: "var(--accent-ink)" }} />
+            <div>Sync started — pulling the latest from Shopify and re-scoring. Refresh in a moment to see updated data.</div>
+          </div>
+        )}
         <div className="note note-acc" style={{ marginBottom: 16 }}>
           <i className="ti ti-brand-shopify" />
           <div>

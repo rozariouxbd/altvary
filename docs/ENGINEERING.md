@@ -130,6 +130,19 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
+### 2026-06-15 — Fix Resync 504 + scope to current store · `_______`
+- **What.** `/api/shopify/sync` backfilled **every** store synchronously in one request, which
+  504'd (`FUNCTION_INVOCATION_TIMEOUT`) on the dev store (1,034 customers) and also let one
+  merchant's click touch other tenants' data. Rewrote it: scoped to `getCurrentStore()` only; GET
+  runs the backfill in `after()` (Vercel `waitUntil`) and redirects immediately with a
+  `?notice=sync-started` banner on the dashboard, so the click never blocks past the timeout; POST
+  stays synchronous + scoped, returns JSON. Added `export const maxDuration = 60`.
+- **Why.** Surfaced during Klaviyo verification — the Resync button 504'd. The all-stores loop was
+  both the timeout cause and a tenant-isolation smell.
+- **Note.** Imports use the `@/` tsconfig alias; the equivalent `../../../../lib/*` relative paths
+  tripped `moduleResolution: bundler` resolution via the generated route types for this handler.
+- **Verification.** `npx tsc --noEmit` + `npm run build` clean (`/api/shopify/sync` compiles).
+
 ### 2026-06-15 — Register data webhooks on backfill (fixes dev-store real-time gap) · `ee20546`
 - **What.** `backfillStore` now calls `registerWebhooks` (idempotent) right after fetching the
   token. Previously webhook registration lived *only* in the OAuth callback, so the org dev store
