@@ -139,8 +139,7 @@ Format: `### YYYY-MM-DD — short title` + what changed + why + verification, an
   stays synchronous + scoped, returns JSON. Added `export const maxDuration = 60`.
 - **Why.** Surfaced during Klaviyo verification — the Resync button 504'd. The all-stores loop was
   both the timeout cause and a tenant-isolation smell.
-- **Note.** Imports use the `@/` tsconfig alias; the equivalent `../../../../lib/*` relative paths
-  tripped `moduleResolution: bundler` resolution via the generated route types for this handler.
+- **Note.** Imports use the `@/` tsconfig alias (base-relative), consistent and robust.
 - **Verification.** `npx tsc --noEmit` + `npm run build` clean (`/api/shopify/sync` compiles).
 
 ### 2026-06-15 — Register data webhooks on backfill (fixes dev-store real-time gap) · `ee20546`
