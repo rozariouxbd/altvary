@@ -3,6 +3,7 @@ import Topbar from "../../components/Topbar";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { runScoring } from "../../../lib/engine/scoring";
+import { verifyKey, setStoreKlaviyoKey, clearStoreKlaviyoKey } from "../../../lib/klaviyo";
 import WeightSliders from "./WeightSliders";
 
 function prettyStore(domain: string): string {
@@ -56,6 +57,25 @@ async function updateWeights(formData: FormData) {
   redirect("/settings?notice=weights-saved");
 }
 
+async function connectKlaviyo(formData: FormData) {
+  "use server";
+  const store = await getCurrentStore();
+  if (!store) redirect("/settings");
+  const rawKey = String(formData.get("klaviyoApiKey") ?? "").trim();
+  if (!rawKey) redirect("/settings?notice=klaviyo-invalid");
+  // Validate the key against Klaviyo before storing it, so we never persist a dud.
+  if (!(await verifyKey(rawKey))) redirect("/settings?notice=klaviyo-invalid");
+  await setStoreKlaviyoKey(store.id, rawKey);
+  redirect("/settings?notice=klaviyo-connected");
+}
+
+async function disconnectKlaviyo() {
+  "use server";
+  const store = await getCurrentStore();
+  if (store) await clearStoreKlaviyoKey(store.id);
+  redirect("/settings?notice=klaviyo-disconnected");
+}
+
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ notice?: string }> }) {
   const sp = await searchParams;
   const store = await getCurrentStore();
@@ -82,7 +102,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <main className="page">
         <div className="note note-acc" style={{ marginBottom: 16 }}>
           <i className="ti ti-brand-shopify"></i>
-          <div><strong>Live — store config from Shopify. Klaviyo, Gorgias, and notification settings are coming soon.</strong></div>
+          <div><strong>Live — store config from Shopify with real-time Klaviyo sync. Gorgias and notification settings are coming soon.</strong></div>
         </div>
         <div className="page-head">
           <div>
@@ -98,6 +118,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         {sp.notice === "recomputed" && <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}><i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>Recompute complete — scores refreshed.</div></div>}
         {sp.notice === "weights-saved" && <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}><i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>RFME weights saved — applies on the next scoring run. Hit <b>Recompute now</b> to apply immediately.</div></div>}
         {sp.notice === "weights-invalid" && <div className="note" style={{ marginBottom: 16, background: "var(--neg-soft)", borderColor: "transparent" }}><i className="ti ti-alert-triangle" style={{ color: "var(--neg)" }} /><div>Weights must not all be zero — at least one dimension needs weight.</div></div>}
+        {sp.notice === "klaviyo-connected" && <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}><i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>Klaviyo connected — scores and tiers will sync on every order and each nightly run.</div></div>}
+        {sp.notice === "klaviyo-disconnected" && <div className="note" style={{ marginBottom: 16, background: "var(--card-2)", borderColor: "transparent" }}><i className="ti ti-plug-connected-x" /><div>Klaviyo disconnected — we&apos;ll stop syncing profile properties.</div></div>}
+        {sp.notice === "klaviyo-invalid" && <div className="note" style={{ marginBottom: 16, background: "var(--neg-soft)", borderColor: "transparent" }}><i className="ti ti-alert-triangle" style={{ color: "var(--neg)" }} /><div>That Klaviyo private API key was rejected — double-check it has read access and try again.</div></div>}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, alignItems: "start" }}>
           {/* Plan & trial */}
@@ -181,6 +204,41 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 <a href="/isolation" className="btn btn-ghost btn-sm"><i className="ti ti-shield-check" /> Audit isolation</a>
                 <a href="/api/exports/customers" className="btn btn-ghost btn-sm"><i className="ti ti-download" /> Export customers</a>
               </div>
+            </div>
+          </div>
+
+          {/* Klaviyo real-time sync */}
+          <div className="card">
+            <div className="card-head">
+              <div><div className="card-title">Klaviyo sync</div><div className="card-sub">Stream live RFME scores &amp; lifecycle tiers onto profiles</div></div>
+              {store?.klaviyoApiKey
+                ? <span className="tag pos"><span className="dot pos"></span> Connected</span>
+                : <span className="tag"><span className="dot"></span> Not connected</span>}
+            </div>
+            <div className="card-pad" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.5 }}>
+                Appends <code style={{ fontFamily: "var(--mono)", fontSize: 11.5 }}>altvary_rfme_score</code> and <code style={{ fontFamily: "var(--mono)", fontSize: 11.5 }}>altvary_lifecycle_tier</code> to each customer&apos;s Klaviyo profile — updated in real time on every order and reconciled each nightly run, so flows never target someone who just bought.
+              </div>
+              {store?.klaviyoApiKey ? (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12.5px", borderBottom: "1px solid var(--line-soft)", paddingBottom: 10 }}>
+                    <span style={{ color: "var(--muted)" }}>Last full sync</span>
+                    <span style={{ fontWeight: 600, fontFamily: "var(--mono)", fontSize: 12 }}>{store.klaviyoSyncedAt ? store.klaviyoSyncedAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Pending next run"}</span>
+                  </div>
+                  <form action={disconnectKlaviyo}>
+                    <button type="submit" className="btn btn-ghost btn-sm"><i className="ti ti-plug-connected-x" /> Disconnect Klaviyo</button>
+                  </form>
+                </>
+              ) : (
+                <form action={connectKlaviyo} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: "11.5px", color: "var(--muted)", fontWeight: 500 }}>Klaviyo private API key</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input name="klaviyoApiKey" type="password" placeholder="pk_………" autoComplete="off" style={{ flex: 1, border: "1px solid var(--line)", borderRadius: "var(--r-sm)", background: "var(--card)", padding: "8px 12px", fontSize: 13, fontFamily: "var(--mono)", color: "var(--ink)", outline: "none" }} />
+                    <button type="submit" className="btn btn-primary btn-sm"><i className="ti ti-plug-connected" /> Connect</button>
+                  </div>
+                  <span style={{ fontSize: 11, color: "var(--faint)" }}>Klaviyo → Settings → API keys → create a private key with profile access. Stored encrypted.</span>
+                </form>
+              )}
             </div>
           </div>
         </div>

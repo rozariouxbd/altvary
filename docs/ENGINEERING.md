@@ -42,6 +42,12 @@ tenant from the session. RLS is enabled in Postgres; Prisma connects as owner.
 **Shopify integration** (`lib/shopify.ts`). OAuth auth-code install → encrypted offline token
 → backfill (customers/orders/products) → webhooks (data + GDPR). HMAC-verified.
 
+**Klaviyo integration** (`lib/klaviyo.ts`). Optional, per-store. The merchant's Klaviyo private
+API key is stored encrypted (`lib/crypto`); two-speed sync appends `altvary_rfme_score` /
+`altvary_lifecycle_tier` (+ `altvary_last_order_at`) custom properties onto Klaviyo profiles:
+a **real-time freshness override** on the `orders/create` webhook and a **bulk reconciliation**
+at the end of each scoring run. Best-effort everywhere (never breaks Shopify/scoring flows).
+
 **Scheduling.** `vercel.json` cron hits `/api/scoring/run` nightly (02:00 UTC); the route is
 `CRON_SECRET`-guarded and scores every store.
 
@@ -80,6 +86,21 @@ Format: **Decision** — rationale — *effect / trade-off*.
   parent (no `onDelete: Cascade` in schema). — *App Store requirement; verified by actually
   deleting a throwaway customer via the live webhook.*
 
+### Integrations
+- **Klaviyo sync is two-speed (webhook + nightly), not a continuous stream.** RFME scores are
+  **percentile ranks across the whole cohort** (`scoring.ts`), so an exact composite can't be
+  recomputed per-customer without re-ranking everyone — too expensive on each order webhook. So:
+  the nightly run is the **accurate source of truth** (bulk-imports every customer's fresh
+  score/tier to Klaviyo); the `orders/create` webhook does a **freshness override** that pushes
+  only the facts that just changed (new `altvary_last_order_at`, and lifts a customer out of any
+  lapsed tier → "Returning"). — *This is what actually prevents the "we miss you" email firing on
+  someone who bought hours ago — the original product motivation — without pretending we can
+  cheaply recompute a cohort-relative score in real time. The webhook is real-time where it
+  matters (activeness); the nightly run settles the exact tier.*
+- **Klaviyo connect via merchant-pasted private API key (v1), not OAuth.** Validated against
+  Klaviyo (`/accounts/`) before storing, encrypted at rest like the Shopify token. — *One Settings
+  field, ships now; a Klaviyo OAuth app is a heavier follow-up if/when needed.*
+
 ### Scale & performance
 - **Server-side pagination on list pages** (Customers, Inventory, Winback). URL-driven
   (`?page/segment/status/q/sort`); counts via `groupBy`. — *Was loading entire tables into the
@@ -108,6 +129,25 @@ Format: **Decision** — rationale — *effect / trade-off*.
 
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
+
+### 2026-06-15 — Real-time Klaviyo sync (two-speed: webhook + nightly) · `_______`
+- **What.** New optional per-store Klaviyo integration. `lib/klaviyo.ts` (encrypted key storage,
+  `verifyKey`, single-profile upsert via `/profile-import/`, bulk import via
+  `/profile-bulk-import-jobs/`, GDPR scrub). Appends `altvary_rfme_score`,
+  `altvary_lifecycle_tier`, `altvary_last_order_at` onto Klaviyo profiles. Two triggers:
+  (1) `handleWebhook` `orders/create`/`orders/updated` fires a **freshness override** after
+  `recomputeAggregates`; (2) `runScoring` does a **bulk reconciliation** after the run completes.
+  `customers/redact` now also nulls the `altvary_*` props on the Klaviyo profile. Settings gets a
+  Klaviyo connect/disconnect card (key validated before storing); Integrations page promotes
+  Klaviyo from "coming soon" to an active card when connected. Schema: `Store.klaviyoApiKey`
+  (encrypted) + `Store.klaviyoSyncedAt`; migration `add_klaviyo_integration` applied to Supabase.
+- **Why.** Merchants were exporting static lists to Klaviyo → data lag → "we miss you" emails to
+  people who bought hours ago. Streaming live profile properties lets Klaviyo flows/segments react
+  to current lifecycle state. See the Decision Log (Integrations) for the two-speed rationale.
+- **Verification.** `npx tsc --noEmit` clean; `npm run build` clean (`/settings`, `/integrations`
+  compile as `ƒ`). Supabase columns confirmed present via `information_schema`. Live Klaviyo
+  round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
+  are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
 ### 2026-06-15 — Integrations page: real data instead of mock · `040b862`
 - **What.** `/integrations` was a static client component with fabricated data (hardcoded

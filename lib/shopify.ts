@@ -3,6 +3,7 @@ import type { Store } from "@prisma/client";
 import { prisma } from "./prisma";
 import { encrypt, decrypt } from "./crypto";
 import { runScoring } from "./engine/scoring";
+import { syncOrderFreshness, redactProfile } from "./klaviyo";
 
 export const API_VERSION = "2025-01";
 const SCOPES = process.env.SHOPIFY_SCOPES ?? "read_orders,read_customers,read_products";
@@ -424,6 +425,14 @@ export async function handleWebhook(
         },
       });
       await recomputeAggregates(store.id, customerId);
+      // Real-time Klaviyo freshness override: the customer just ordered, so push
+      // their new last-order date and lift them out of any lapsed tier before a
+      // win-back flow can misfire. No-ops if Klaviyo isn't connected. Non-fatal.
+      const c = await prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { email: true, segment: true },
+      });
+      if (c) await syncOrderFreshness(store, c, new Date(o.created_at)).catch(() => {});
       return;
     }
     case "customers/create":
@@ -467,6 +476,12 @@ export async function handleWebhook(
       const g = payload as unknown as ShopifyRedactPayload;
       const customerId = g.customer?.id != null ? String(g.customer.id) : null;
       if (!customerId) return;
+      // Capture the email before deletion so we can scrub the altvary_* properties
+      // we appended to the matching Klaviyo profile (best-effort, non-fatal).
+      const redacted = await prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { email: true },
+      });
       const where = { storeId: store.id, customerId };
       await prisma.$transaction([
         prisma.scoreHistory.deleteMany({ where }),
@@ -475,6 +490,8 @@ export async function handleWebhook(
         prisma.order.deleteMany({ where }),
         prisma.customer.deleteMany({ where: { id: customerId, storeId: store.id } }),
       ]);
+      const redactEmail = redacted?.email || g.customer?.email || null;
+      if (redactEmail) await redactProfile(store, redactEmail).catch(() => {});
       console.info("[gdpr] customers/redact complete", { shop: store.shopDomain, customerId });
       return;
     }

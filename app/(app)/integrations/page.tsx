@@ -31,7 +31,8 @@ export default async function IntegrationsPage() {
       ])
     : [0, 0, 0, null];
 
-  const connectedCount = store ? 1 : 0;
+  const klaviyoConnected = !!store?.klaviyoApiKey;
+  const connectedCount = (store ? 1 : 0) + (klaviyoConnected ? 1 : 0);
   const lastScored = lastRun?.finishedAt ?? null;
 
   const stats: { l: string; v: string; color?: string }[] = [
@@ -109,10 +110,35 @@ export default async function IntegrationsPage() {
         </div>
       </div>
 
+      {/* Marketing — active (only once Klaviyo is connected) */}
+      {klaviyoConnected && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" as const, color: "var(--muted)", margin: "20px 0 10px" }}>Marketing — active</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+            <div style={{ padding: 18, border: "1px solid var(--line)", borderRadius: "var(--r-sm)", background: "var(--card)" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, display: "grid", placeItems: "center" as const, fontSize: 18, flexShrink: 0, background: "var(--pos-soft)", color: "var(--pos)" }}><i className="ti ti-mail"></i></div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: "13.5px", fontWeight: 700, letterSpacing: "-.01em" }}>Klaviyo</div><div style={{ fontSize: "11.5px", color: "var(--muted)", marginTop: 1 }}>Real-time profile sync</div></div>
+                <span style={{ fontSize: "10.5px", fontWeight: 700, letterSpacing: ".04em", padding: "2px 7px", borderRadius: 4, background: "var(--pos-soft)", color: "var(--pos)" }}>Connected</span>
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginBottom: 12 }}>
+                Live <code style={{ fontFamily: "var(--mono)", fontSize: 11 }}>altvary_rfme_score</code> &amp; <code style={{ fontFamily: "var(--mono)", fontSize: 11 }}>altvary_lifecycle_tier</code> appended to profiles · updated on every order · reconciled nightly
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <a href="/settings" className="btn btn-ghost btn-sm">Manage</a>
+                <span style={{ fontSize: 11, color: "var(--faint)", marginLeft: "auto" }}>
+                  {store?.klaviyoSyncedAt ? `Last synced ${timeAgo(store.klaviyoSyncedAt)}` : "Sync pending next run"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Coming-soon sections */}
       {[
         { label: "Marketing — coming soon", cards: [
-          { icon: "ti-mail", name: "Klaviyo", desc: "Push segments directly to Klaviyo flows" },
+          ...(klaviyoConnected ? [] : [{ icon: "ti-mail", name: "Klaviyo", desc: "Stream live RFME scores & lifecycle tiers onto Klaviyo profiles" }]),
           { icon: "ti-message-circle", name: "Gorgias", desc: "Helpdesk signals for at-risk customers" },
           { icon: "ti-brand-slack", name: "Slack", desc: "VIP drop alerts and weekly digest to your team channel" },
         ]},

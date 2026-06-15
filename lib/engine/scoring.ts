@@ -1,5 +1,6 @@
 import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
+import { bulkSyncProfiles } from "../klaviyo";
 
 const DAY = 86_400_000;
 
@@ -116,7 +117,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
     const [customers, orders, W] = await Promise.all([
       prisma.customer.findMany({
         where: { storeId: store.id },
-        select: { id: true, totalSpent: true, orderCount: true, lastOrderAt: true },
+        select: { id: true, email: true, totalSpent: true, orderCount: true, lastOrderAt: true },
       }),
       prisma.order.findMany({
         where: { storeId: store.id },
@@ -237,6 +238,18 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         weights: weightsKey(W),
       },
     });
+
+    // Klaviyo reconciliation: push every customer's freshly-computed score/tier as
+    // a bulk import job. No-ops when the store hasn't connected Klaviyo. Best-effort
+    // — a Klaviyo outage must never fail a scoring run.
+    const byId = new Map(customers.map((c) => [c.id, c]));
+    await bulkSyncProfiles(
+      store,
+      scored.map((s) => {
+        const c = byId.get(s.id)!;
+        return { email: c.email, rfmeScore: s.score, segment: s.segment, lastOrderAt: c.lastOrderAt };
+      })
+    ).catch(() => {});
 
     return { runId: run!.id, scored: scored.length, segments, dryRun: false };
   } catch (err) {
