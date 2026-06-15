@@ -130,7 +130,7 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
-### 2026-06-15 — Klaviyo sync mode (auto vs manual) + on-demand Sync now · `_______`
+### 2026-06-15 — Klaviyo sync mode (auto vs manual) + on-demand Sync now · `864c121`
 - **What.** Merchants can now turn off continuous Klaviyo sync. New `Store.klaviyoSyncMode`
   ("auto" default | "manual"). In **auto**, the order webhook (`syncOrderFreshness`) and the nightly
   bulk (`runScoring`) both push — gated on mode. In **manual**, neither fires automatically; a new
