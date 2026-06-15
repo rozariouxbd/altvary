@@ -42,10 +42,10 @@ What remains is mostly listing content + two config toggles — no core engineer
       Surfaced + fixed two issues in the process: data webhooks weren't registered on the dev store
       (now registered on backfill, `ee20546`) and the Resync route 504'd by syncing all stores
       synchronously (now scoped + `after()`, `2173c2a`).
-      - [ ] *Optional final confirmation:* place a brand-new order and watch `altvary_last_order_at`
-        update on that profile within seconds **without** a resync — proves the live `orders/create`
-        webhook freshness override specifically (registration is confirmed; the push path is the same
-        upsert the bulk sync already exercised).
+      - [x] *Real-time webhook path CONFIRMED (2026-06-15).* Placed a fresh order; `altvary_last_order_at`
+        updated to the new order time within seconds **without** a resync. Server logs show a burst of
+        `POST /api/webhooks → 200` matching the timestamp — `orders/create` → `syncOrderFreshness` push
+        proven live, independent of the bulk path.
       - ⚠️ All Klaviyo calls are best-effort / non-fatal by design, so a bad key or wrong scope fails
         *silently* — re-verify on any real merchant store before relying on it for them.
 - [ ] Flip `SHOPIFY_BILLING_TEST=false` only if/when charging real money (keep free for now → leave billing disabled)
