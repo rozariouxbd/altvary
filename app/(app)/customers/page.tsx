@@ -14,6 +14,7 @@ const SEG_ACTION: Record<string, string> = {
   risk: "Win-back outreach",
   churn: "Win-back · value content",
   lost: "Suppressed — ignore list",
+  unscored: "Awaiting next scoring run",
 };
 
 const PAGE_SIZE = 50;
@@ -90,7 +91,10 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   }
 
   const rows: CustomerRow[] = customers.map((c) => {
-    const seg = DB_TO_SHORT[c.segment ?? ""] ?? "risk";
+    // A customer with no segment/score hasn't been through a scoring run yet
+    // (e.g. just synced, no orders) — mark it "unscored" rather than defaulting
+    // to "at risk / 0", which misrepresents it.
+    const seg = DB_TO_SHORT[c.segment ?? ""] ?? "unscored";
     const name = `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || c.email;
     return {
       id: c.id,
@@ -100,7 +104,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       sub: `${c.orderCount} order${c.orderCount === 1 ? "" : "s"} · ${c.email}`,
       last: fmtDate(c.lastOrderAt),
       ltv: formatMoney(c.totalSpent ?? 0, currency),
-      score: Math.round(c.rfmeScore ?? 0),
+      score: c.rfmeScore == null ? null : Math.round(c.rfmeScore),
       action: SEG_ACTION[seg] ?? "—",
     };
   });

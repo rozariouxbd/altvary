@@ -66,7 +66,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <Topbar title="Dashboard" sub={`Live · ${total.toLocaleString()} customers scored`} search="Search customers, SKUs, recommendations…" cta={{ icon: "ti-refresh", label: "Sync from Shopify", href: "/api/shopify/sync?return=/dashboard" }} />
+      <Topbar title="Dashboard" sub={`Live · ${total.toLocaleString()} customers`} search="Search customers, SKUs, recommendations…" cta={{ icon: "ti-refresh", label: "Sync from Shopify", href: "/api/shopify/sync?return=/dashboard" }} />
 
       <main className="page">
         {sp.notice === "sync-started" && (

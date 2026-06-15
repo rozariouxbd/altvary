@@ -6,13 +6,13 @@ import Topbar from "../../components/Topbar";
 
 export interface CustomerRow {
   id: string;
-  seg: string; // vip | ret | risk | churn | lost
+  seg: string; // vip | ret | risk | churn | lost | unscored
   initials: string;
   name: string;
   sub: string;
   last: string;
   ltv: string;
-  score: number;
+  score: number | null; // null = not yet scored
   action: string;
 }
 
@@ -22,6 +22,7 @@ const SEG_TAG: Record<string, ReactElement> = {
   risk: <span className="tag warn">At risk</span>,
   churn: <span className="tag neg">Churning</span>,
   lost: <span className="tag">Lost</span>,
+  unscored: <span className="tag" style={{ color: "var(--faint)", borderStyle: "dashed" }}>Unscored</span>,
 };
 const SEG_LABEL: Record<string, string> = {
   vip: "VIP", ret: "Returning", risk: "At risk", churn: "Churning", lost: "Lost", all: "All customers",
@@ -100,7 +101,7 @@ export default function CustomersView(props: Props) {
 
   return (
     <>
-      <Topbar title="Customers" sub={`${storeTotal.toLocaleString()} scored`} />
+      <Topbar title="Customers" sub={`${storeTotal.toLocaleString()} customers`} />
       <main className="page">
         <div className="note note-acc" style={{ marginBottom: 16 }}>
           <i className="ti ti-brand-shopify"></i>
@@ -229,10 +230,14 @@ export default function CustomersView(props: Props) {
                     <td className="muted hide-tablet">{c.last}</td>
                     <td className="hide-mobile" style={{ textAlign: "right" }}><span className="num">{c.ltv}</span></td>
                     <td>
-                      <span className={`score ${c.seg}`}>
-                        <span className="v">{c.score}</span>
-                        <span className="bar"><span className="fill" style={{ width: `${c.score}%` }}></span></span>
-                      </span>
+                      {c.score === null ? (
+                        <span className="muted" title="Not yet scored — runs on the next scoring cycle">—</span>
+                      ) : (
+                        <span className={`score ${c.seg}`}>
+                          <span className="v">{c.score}</span>
+                          <span className="bar"><span className="fill" style={{ width: `${c.score}%` }}></span></span>
+                        </span>
+                      )}
                     </td>
                     <td className="reco hide-tablet">{c.action}</td>
                     <td style={{ textAlign: "right" }}>

@@ -130,6 +130,20 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
+### 2026-06-15 — Surface "unscored" customers instead of faking "At risk / 0" · `_______`
+- **What.** A customer with no segment/score yet (e.g. just synced via webhook, 0 orders, before the
+  next scoring run) rendered on the Customers list as **"At risk / 0"** — the page defaulted a null
+  segment to `risk` and a null score to `0`. Now such rows show a dashed **"Unscored"** tag and a
+  `—` score. Also relabeled the Customers + Dashboard topbar count from "scored" to "customers"
+  (it counts *all* customers): this reconciles the header total (e.g. 1,035) with the segment tiles'
+  sum (1,034 *scored*) — the difference is simply the not-yet-scored customers.
+- **Why.** Spotted a real Shopify customer (`rozarioux@gmail.com`, 0 orders, mirrored from the
+  store) showing as "At risk / 0" and an off-by-one between the header count and the tiles. Both were
+  display artifacts of treating "unscored" as "at risk / 0". The next scoring run scores these rows
+  (0 orders → Lost) and they leave the unscored state naturally.
+- **Verification.** `tsc` + `next build` clean. (Customers page is auth-gated; verified the data
+  shape via DB — the customer has null `segment`/`rfmeScore`/`scoredAt`.)
+
 ### 2026-06-15 — Fix full-name search (multi-term matching) · `dbaae69`
 - **What.** Searching a full name ("Aiko Anderson") returned no results even when the customer
   existed. Both the global search (`/api/search`) and the Customers list page matched the *whole*
