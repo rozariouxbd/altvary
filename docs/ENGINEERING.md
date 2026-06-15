@@ -130,7 +130,7 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
-### 2026-06-15 — Fix Resync 504 + scope to current store · `_______`
+### 2026-06-15 — Fix Resync 504 + scope to current store · `2173c2a`
 - **What.** `/api/shopify/sync` backfilled **every** store synchronously in one request, which
   504'd (`FUNCTION_INVOCATION_TIMEOUT`) on the dev store (1,034 customers) and also let one
   merchant's click touch other tenants' data. Rewrote it: scoped to `getCurrentStore()` only; GET
