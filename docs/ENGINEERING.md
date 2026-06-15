@@ -130,7 +130,7 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
-### 2026-06-15 — Surface "unscored" customers instead of faking "At risk / 0" · `_______`
+### 2026-06-15 — Surface "unscored" customers instead of faking "At risk / 0" · `09cb6c4`
 - **What.** A customer with no segment/score yet (e.g. just synced via webhook, 0 orders, before the
   next scoring run) rendered on the Customers list as **"At risk / 0"** — the page defaulted a null
   segment to `risk` and a null score to `0`. Now such rows show a dashed **"Unscored"** tag and a
