@@ -117,6 +117,10 @@ model Customer {
   email       String
   firstName   String?
   lastName    String?
+  // When the customer account was created (Shopify customers.created_at; for the
+  // behavior simulator, the synthetic signup date). Enables tenure/account-age
+  // features + honest churn labeling. Defaults to now() for pre-existing rows.
+  createdAt   DateTime  @default(now())
   totalSpent  Float     @default(0)
   orderCount  Int       @default(0)
   lastOrderAt DateTime?

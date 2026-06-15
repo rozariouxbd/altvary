@@ -47,3 +47,14 @@ re-run once a merchant with real multi-month history is connected.
 ## "Is it good?" gate
 A model is worth productionizing only if it **beats the RFME baseline** on held-out data —
 churn by AUC / PR-AUC, LTV by MAE / R². If it doesn't beat the heuristic, keep the heuristic.
+
+## Findings (2026-06-15)
+- **Toy synthetic data** (`generate_data.py`, memoryless churn): RFME *edged out* GBDT on churn;
+  GBDT modestly beat the naive LTV baseline. Verdict: inconclusive (the toy churn was ~random).
+- **Behavior-simulator data** (`../sim`, 6.9k customers / 17.6k orders / 18 months, via
+  `--source db --store sim-store.myshopify.com`): **GBDT beats RFME on both** —
+  churn AUC **0.76 → 0.81**, PR-AUC **0.65 → 0.74**; LTV R² **0.19 → 0.42**, MAE 53.4 → 48.1.
+  Top churn features: orders_last_90d, recency_days, spend_last_90d.
+- **Caveat:** still simulated. The signal is realistic (behavior-driven churn, fair RFME baseline,
+  not tuned to favor ML), but real-world lift must be confirmed on a real merchant's backfilled
+  history before productionizing. Methodology + harness are proven.
