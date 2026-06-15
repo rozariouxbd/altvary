@@ -3,7 +3,7 @@ import Topbar from "../../components/Topbar";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { runScoring } from "../../../lib/engine/scoring";
-import { verifyKey, setStoreKlaviyoKey, clearStoreKlaviyoKey } from "../../../lib/klaviyo";
+import { verifyKey, setStoreKlaviyoKey, clearStoreKlaviyoKey, syncStoreNow } from "../../../lib/klaviyo";
 import WeightSliders from "./WeightSliders";
 
 function prettyStore(domain: string): string {
@@ -76,6 +76,22 @@ async function disconnectKlaviyo() {
   redirect("/settings?notice=klaviyo-disconnected");
 }
 
+async function setKlaviyoMode(formData: FormData) {
+  "use server";
+  const store = await getCurrentStore();
+  if (!store) redirect("/settings");
+  const mode = String(formData.get("mode") ?? "auto") === "manual" ? "manual" : "auto";
+  await prisma.store.update({ where: { id: store.id }, data: { klaviyoSyncMode: mode } });
+  redirect("/settings?notice=klaviyo-mode");
+}
+
+async function syncKlaviyoNow() {
+  "use server";
+  const store = await getCurrentStore();
+  if (store) await syncStoreNow(store).catch(() => {});
+  redirect("/settings?notice=klaviyo-synced");
+}
+
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ notice?: string }> }) {
   const sp = await searchParams;
   const store = await getCurrentStore();
@@ -121,6 +137,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         {sp.notice === "klaviyo-connected" && <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}><i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>Klaviyo connected — scores and tiers will sync on every order and each nightly run.</div></div>}
         {sp.notice === "klaviyo-disconnected" && <div className="note" style={{ marginBottom: 16, background: "var(--card-2)", borderColor: "transparent" }}><i className="ti ti-plug-connected-x" /><div>Klaviyo disconnected — we&apos;ll stop syncing profile properties.</div></div>}
         {sp.notice === "klaviyo-invalid" && <div className="note" style={{ marginBottom: 16, background: "var(--neg-soft)", borderColor: "transparent" }}><i className="ti ti-alert-triangle" style={{ color: "var(--neg)" }} /><div>That Klaviyo private API key was rejected — double-check it has read access and try again.</div></div>}
+        {sp.notice === "klaviyo-mode" && <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}><i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>Klaviyo sync mode updated.</div></div>}
+        {sp.notice === "klaviyo-synced" && <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}><i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>Pushed the latest scores &amp; tiers to Klaviyo.</div></div>}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, alignItems: "start" }}>
           {/* Plan & trial */}
@@ -225,9 +243,35 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                     <span style={{ color: "var(--muted)" }}>Last full sync</span>
                     <span style={{ fontWeight: 600, fontFamily: "var(--mono)", fontSize: 12 }}>{store.klaviyoSyncedAt ? store.klaviyoSyncedAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Pending next run"}</span>
                   </div>
-                  <form action={disconnectKlaviyo}>
-                    <button type="submit" className="btn btn-ghost btn-sm"><i className="ti ti-plug-connected-x" /> Disconnect Klaviyo</button>
-                  </form>
+
+                  {/* Auto-sync mode toggle */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12.5px", borderBottom: "1px solid var(--line-soft)", paddingBottom: 10 }}>
+                    <span style={{ color: "var(--muted)" }}>Auto-sync <span style={{ color: "var(--faint)" }}>· real-time + nightly</span></span>
+                    <form action={setKlaviyoMode}>
+                      <input type="hidden" name="mode" value={store.klaviyoSyncMode === "manual" ? "auto" : "manual"} />
+                      <button type="submit" className="btn btn-ghost btn-sm">
+                        {store.klaviyoSyncMode === "manual"
+                          ? <><i className="ti ti-toggle-left" /> Off — turn on</>
+                          : <><i className="ti ti-toggle-right" style={{ color: "var(--pos)" }} /> On — switch to manual</>}
+                      </button>
+                    </form>
+                  </div>
+
+                  {store.klaviyoSyncMode === "manual" && (
+                    <div className="note" style={{ background: "var(--warn-soft)", borderColor: "transparent", fontSize: 12 }}>
+                      <i className="ti ti-alert-triangle" style={{ color: "var(--warn)" }} />
+                      <div>Auto-sync is off — scores update in Klaviyo only when you hit <b>Sync now</b>. Live flows may act on stale tiers.</div>
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <form action={syncKlaviyoNow}>
+                      <button type="submit" className="btn btn-primary btn-sm"><i className="ti ti-refresh" /> Sync to Klaviyo now</button>
+                    </form>
+                    <form action={disconnectKlaviyo}>
+                      <button type="submit" className="btn btn-ghost btn-sm"><i className="ti ti-plug-connected-x" /> Disconnect</button>
+                    </form>
+                  </div>
                 </>
               ) : (
                 <form action={connectKlaviyo} style={{ display: "flex", flexDirection: "column", gap: 6 }}>

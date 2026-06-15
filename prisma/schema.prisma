@@ -19,9 +19,12 @@ model Store {
   tokenType       String        @default("oauth")
   // Klaviyo real-time sync (optional). The merchant's Klaviyo private API key,
   // encrypted at rest (lib/crypto), or null when not connected. klaviyoSyncedAt
-  // records the last successful nightly bulk reconciliation. See lib/klaviyo.ts.
+  // records the last successful bulk reconciliation. klaviyoSyncMode is "auto"
+  // (continuous: order webhook + nightly run) or "manual" (only the on-demand
+  // "Sync now" button pushes). See lib/klaviyo.ts.
   klaviyoApiKey   String?
   klaviyoSyncedAt DateTime?
+  klaviyoSyncMode String        @default("auto")
   trialEndsAt     DateTime
   scoringSchedule String        @default("0 2 * * *")
   createdAt       DateTime      @default(now())

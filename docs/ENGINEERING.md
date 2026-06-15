@@ -130,6 +130,19 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
+### 2026-06-15 — Klaviyo sync mode (auto vs manual) + on-demand Sync now · `_______`
+- **What.** Merchants can now turn off continuous Klaviyo sync. New `Store.klaviyoSyncMode`
+  ("auto" default | "manual"). In **auto**, the order webhook (`syncOrderFreshness`) and the nightly
+  bulk (`runScoring`) both push — gated on mode. In **manual**, neither fires automatically; a new
+  **"Sync to Klaviyo now"** button (`syncStoreNow` → `bulkSyncProfiles`, runs regardless of mode)
+  is the only push. Settings Klaviyo card gets the auto-sync toggle, the Sync-now button, and a
+  stale-data warning when manual. Migration `add_klaviyo_sync_mode` applied.
+- **Why.** Control/trust use cases: preview before trusting the firehose, pause during flow rebuilds,
+  push on the merchant's own cadence. Default stays **auto** to preserve the real-time value prop.
+  Deliberately *not* built: per-segment/per-consent scoping — the property sync only annotates
+  profiles (never messages), so scoping adds complexity without protection.
+- **Verification.** `tsc` + `next build` clean (`/settings` compiles).
+
 ### 2026-06-15 — Surface "unscored" customers instead of faking "At risk / 0" · `09cb6c4`
 - **What.** A customer with no segment/score yet (e.g. just synced via webhook, 0 orders, before the
   next scoring run) rendered on the Customers list as **"At risk / 0"** — the page defaulted a null

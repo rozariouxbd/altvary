@@ -125,10 +125,12 @@ async function upsertProfile(key: string, email: string, props: Record<string, u
  * nightly run later settles the exact score/tier.
  */
 export async function syncOrderFreshness(
-  store: Pick<Store, "klaviyoApiKey">,
+  store: Pick<Store, "klaviyoApiKey" | "klaviyoSyncMode">,
   customer: Pick<Customer, "email" | "segment">,
   orderedAt: Date
 ): Promise<void> {
+  // Real-time push only fires in auto mode; manual stores sync on demand only.
+  if (store.klaviyoSyncMode !== "auto") return;
   const key = getKlaviyoKey(store);
   if (!key || !customer.email) return;
   const props: Record<string, unknown> = { [PROP_LAST_ORDER]: orderedAt.toISOString() };
@@ -190,4 +192,17 @@ export async function bulkSyncProfiles(store: Store, customers: SyncableCustomer
     await prisma.store.update({ where: { id: store.id }, data: { klaviyoSyncedAt: new Date() } });
   }
   return ok ? withEmail.length : 0;
+}
+
+/**
+ * On-demand full push for a store — fetches its customers and bulk-syncs them.
+ * Used by the manual "Sync to Klaviyo now" button; runs regardless of sync mode
+ * (it's an explicit user action). No-ops if Klaviyo isn't connected.
+ */
+export async function syncStoreNow(store: Store): Promise<number> {
+  const customers = await prisma.customer.findMany({
+    where: { storeId: store.id },
+    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true },
+  });
+  return bulkSyncProfiles(store, customers);
 }

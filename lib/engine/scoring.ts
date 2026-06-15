@@ -240,16 +240,19 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
     });
 
     // Klaviyo reconciliation: push every customer's freshly-computed score/tier as
-    // a bulk import job. No-ops when the store hasn't connected Klaviyo. Best-effort
-    // — a Klaviyo outage must never fail a scoring run.
-    const byId = new Map(customers.map((c) => [c.id, c]));
-    await bulkSyncProfiles(
-      store,
-      scored.map((s) => {
-        const c = byId.get(s.id)!;
-        return { email: c.email, rfmeScore: s.score, segment: s.segment, lastOrderAt: c.lastOrderAt };
-      })
-    ).catch(() => {});
+    // a bulk import job. Only in auto mode (manual stores sync on demand). No-ops
+    // when Klaviyo isn't connected. Best-effort — a Klaviyo outage must never fail
+    // a scoring run.
+    if (store.klaviyoSyncMode === "auto") {
+      const byId = new Map(customers.map((c) => [c.id, c]));
+      await bulkSyncProfiles(
+        store,
+        scored.map((s) => {
+          const c = byId.get(s.id)!;
+          return { email: c.email, rfmeScore: s.score, segment: s.segment, lastOrderAt: c.lastOrderAt };
+        })
+      ).catch(() => {});
+    }
 
     return { runId: run!.id, scored: scored.length, segments, dryRun: false };
   } catch (err) {
