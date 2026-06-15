@@ -25,13 +25,19 @@ What remains is mostly listing content + two config toggles — no core engineer
 
 ---
 
-## ⚙️ Config toggles (dashboard-only, ~5 min total)
-- [ ] **Supabase → Auth → URL Configuration → Site URL** = `https://altvary.vercel.app`
-      (currently `localhost:3000`; production magic links break until fixed)
-- [ ] **Supabase → Auth → Redirect URLs** → add `https://altvary.vercel.app/api/auth/callback` and `https://altvary.vercel.app/**`
-- [ ] **Custom SMTP in Supabase** (Resend or Brevo, both have free tiers) — built-in email caps at ~3–4/hour, too low for real signups
-- [ ] **Compliance webhook URLs** in the Dev Dashboard app config → all three set to `https://altvary.vercel.app/api/webhooks`
-      (verify they're saved in the active version)
+## ⚙️ Config toggles (dashboard-only)
+- [x] **Supabase → Auth → URL Configuration → Site URL** = `https://altvary.vercel.app` (done 2026-06-15;
+      was `localhost:3000`). Matches the `emailRedirectTo` the app sends (`${SHOPIFY_APP_URL}/api/auth/callback`).
+- [x] **Supabase → Auth → Redirect URLs** = `https://altvary.vercel.app/api/auth/callback` + `https://altvary.vercel.app/**` (done 2026-06-15).
+- [ ] **Compliance webhook URLs** in the Dev/Partner Dashboard app config → set all three (customer data
+      request / customer redact / shop redact) to `https://altvary.vercel.app/api/webhooks`, then **Release a
+      new version** (config is versioned). ← required for App Store review; endpoint already verified live.
+- [ ] **Custom SMTP in Supabase** (Resend/Brevo) — **BLOCKED: no sending domain.** *Not a review/launch
+      blocker* — App Store reviewers log in via the demo-store password, and Supabase's built-in email
+      (~3–4/hour) covers low initial install volume. Needed only before higher signup volume. To unblock:
+      register a cheap domain (~$10/yr, e.g. `altvary.com` or a subdomain you control), verify it in
+      Resend/Brevo (DNS records), then plug the SMTP creds into Supabase → Auth → Emails. Until then,
+      magic links work but are rate-limited; password login is the reliable fallback.
 
 ## 🔐 Pre-launch hardening
 - [x] **Live Klaviyo round-trip VERIFIED (2026-06-15).** Connected a real Klaviyo private key
