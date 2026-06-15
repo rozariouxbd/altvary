@@ -130,7 +130,7 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
-### 2026-06-15 — Fix full-name search (multi-term matching) · `_______`
+### 2026-06-15 — Fix full-name search (multi-term matching) · `dbaae69`
 - **What.** Searching a full name ("Aiko Anderson") returned no results even when the customer
   existed. Both the global search (`/api/search`) and the Customers list page matched the *whole*
   query against `firstName`/`lastName`/`email` individually, so a "First Last" string hit no single
