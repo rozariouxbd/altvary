@@ -235,7 +235,7 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
-### 2026-06-15 — Bulk-update scoring writes (230s → sub-second at 8k) · `_______`
+### 2026-06-15 — Bulk-update scoring writes (230s → sub-second at 8k) · `4a59987`
 - **What.** `runScoring` wrote customer scores as thousands of per-row `prisma.customer.update`
   calls (batched 25 at a time). Replaced with a handful of chunked `UPDATE ... FROM (VALUES …)`
   statements via `$executeRawUnsafe` (1000 rows/statement, under the bind-param limit).
