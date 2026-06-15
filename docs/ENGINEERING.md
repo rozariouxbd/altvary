@@ -130,6 +130,26 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
+---
+
+## 🏷️ Release v1.0.0 — 2026-06-15
+
+First stable release (tag `v1.0.0`). Phase wrap-up. Highlights since the initial deploy:
+- **Real-time Klaviyo sync** — two-speed (order webhook + nightly bulk) push of `altvary_rfme_score`
+  / `altvary_lifecycle_tier` onto profiles, with **auto/manual mode** + on-demand "Sync now".
+  Verified end-to-end live (both bulk and webhook paths).
+- **Shopify**: external-merchant OAuth (durable offline token), GDPR webhooks, data-webhook
+  registration on backfill, billing behind a flag (shipped free).
+- **Scale**: server-side pagination, DB aggregates, ScoreHistory prune, monthly SegmentSnapshot.
+- **UX/correctness fixes**: full-name customer search, "unscored" customer state, Resync scoped +
+  non-blocking (`after()`), per-store currency, merchant-tunable RFME weights.
+- **Ops**: Supabase Auth production URLs configured.
+
+Pre-submission items remaining (non-code): Shopify **compliance webhook URLs** (+ release a version),
+**listing assets** (icon + screenshots). **Deferred (non-blocking):** custom SMTP (needs a sending domain).
+
+---
+
 ### 2026-06-15 — Klaviyo sync mode (auto vs manual) + on-demand Sync now · `864c121`
 - **What.** Merchants can now turn off continuous Klaviyo sync. New `Store.klaviyoSyncMode`
   ("auto" default | "manual"). In **auto**, the order webhook (`syncOrderFreshness`) and the nightly
