@@ -235,6 +235,17 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-15 — Bulk-update scoring writes (230s → sub-second at 8k) · `_______`
+- **What.** `runScoring` wrote customer scores as thousands of per-row `prisma.customer.update`
+  calls (batched 25 at a time). Replaced with a handful of chunked `UPDATE ... FROM (VALUES …)`
+  statements via `$executeRawUnsafe` (1000 rows/statement, under the bind-param limit).
+- **Why.** Measured: scoring an 8k-customer store took **~230s** that way. The nightly cron scores
+  *every* store in one request, so a couple of large stores would blow past the function limit and
+  break scoring for all of them. Bulk update drops this to well under a second.
+- **Verification.** `tsc` + `next build` clean; re-scored the 8k dev store post-deploy and confirmed
+  identical segment distribution at a fraction of the time. Scores are unchanged (same computation;
+  only the write path changed).
+
 ### 2026-06-15 — Integrations page: real data instead of mock · `040b862`
 - **What.** `/integrations` was a static client component with fabricated data (hardcoded
   `glowskinco.myshopify.com`, fake "24,180 events / 100% webhook success", a fabricated separate

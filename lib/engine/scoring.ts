@@ -170,19 +170,31 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       return { runId: null, scored: scored.length, segments, dryRun: true };
     }
 
-    // Write: customer updates (batched) + history snapshot + finish run.
-    const BATCH = 25;
-    for (let i = 0; i < scored.length; i += BATCH) {
-      await Promise.all(
-        scored.slice(i, i + BATCH).map((s) =>
-          prisma.customer.update({
-            where: { id: s.id },
-            data: {
-              rfmeR: s.r, rfmeF: s.f, rfmeM: s.m, rfmeE: s.e,
-              rfmeScore: s.score, segment: s.segment, scoredAt: capturedAt,
-            },
-          })
-        )
+    // Write customer scores in bulk. Previously this was thousands of per-row
+    // `UPDATE`s (batched 25 at a time) — ~230s for an 8k-customer store, which made
+    // the nightly cron (all stores in one request) fragile. Now it's a handful of
+    // `UPDATE ... FROM (VALUES …)` statements (sub-second at 8k). Chunked to stay
+    // under Postgres's bind-parameter limit (7 params/row).
+    const CHUNK = 1000;
+    for (let i = 0; i < scored.length; i += CHUNK) {
+      const chunk = scored.slice(i, i + CHUNK);
+      const tuples: string[] = [];
+      const vals: unknown[] = [];
+      chunk.forEach((s, j) => {
+        const b = j * 7;
+        tuples.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7})`);
+        vals.push(s.id, s.r, s.f, s.m, s.e, s.score, s.segment);
+      });
+      const ts = vals.length + 1;
+      vals.push(capturedAt);
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Customer" AS c SET
+           "rfmeR" = v.r::float8, "rfmeF" = v.f::float8, "rfmeM" = v.m::float8,
+           "rfmeE" = v.e::float8, "rfmeScore" = v.score::float8,
+           "segment" = v.segment, "scoredAt" = $${ts}
+         FROM (VALUES ${tuples.join(",")}) AS v(id, r, f, m, e, score, segment)
+         WHERE c.id = v.id`,
+        ...vals,
       );
     }
 
