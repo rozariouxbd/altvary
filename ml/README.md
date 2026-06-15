@@ -28,9 +28,21 @@ test of the *pipeline*, not real-world lift** — re-run on a real merchant's ba
 cd ml
 python -m venv .venv && . .venv/Scripts/activate   # Windows; use bin/activate on macOS/Linux
 pip install -r requirements.txt
+
+# (a) synthetic data — validates the pipeline
 python generate_data.py
-python pipeline.py
+python pipeline.py                                  # == --source csv
+
+# (b) a real store — reads DIRECT_URL (falls back to DATABASE_URL) from ../.env
+python pipeline.py --source db --store yourshop.myshopify.com
 ```
+
+The `db` source pulls that store's non-refunded orders straight from Supabase Postgres and
+derives each customer's signup from their first order, so the feature set matches the synthetic
+path exactly — same `pipeline.py`, just real rows. If the store lacks enough history (too few
+active customers, or no orders before the 90-day cutoff) the run warns and aborts rather than
+producing a meaningless model. The live dev store currently aborts for exactly this reason —
+re-run once a merchant with real multi-month history is connected.
 
 ## "Is it good?" gate
 A model is worth productionizing only if it **beats the RFME baseline** on held-out data —
