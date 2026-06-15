@@ -160,26 +160,39 @@ def _dsn():
     return env.get("DIRECT_URL") or env.get("DATABASE_URL")
 
 
-def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, wipe: bool) -> None:
+def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP, wipe: bool = False) -> None:
     import psycopg2
     from psycopg2.extras import execute_values
+    # Safety: only the dedicated sim tenant may be wiped — never a real store.
+    if wipe and shop != SIM_SHOP:
+        raise SystemExit(f"refusing to --wipe '{shop}'; only {SIM_SHOP} may be wiped")
     dsn = _dsn()
     if not dsn:
         raise SystemExit("No DIRECT_URL/DATABASE_URL in ../.env")
-    sid = "sim-store-tenant-0001"
+    orders = orders.copy()
+    orders["cancelled"] = orders["cancelled"].astype(str).str.lower().isin(["true", "1"])
+    orders["refunded"] = orders["refunded"].astype(str).str.lower().isin(["true", "1"])
     with psycopg2.connect(dsn) as conn, conn.cursor() as cur:
+        # Upsert by shopDomain. For an EXISTING store the placeholder token/trial are ignored
+        # (DO UPDATE only no-ops shopDomain), so a real store's config is never clobbered.
         cur.execute(
             'INSERT INTO "Store" (id,"shopDomain","accessToken","trialEndsAt") VALUES (%s,%s,%s,%s) '
             'ON CONFLICT ("shopDomain") DO UPDATE SET "shopDomain"=EXCLUDED."shopDomain" RETURNING id',
-            (sid, SIM_SHOP, "SIMULATED-NO-TOKEN", NOW + timedelta(days=365)),
+            ("sim-store-tenant-0001", shop, "SIMULATED-NO-TOKEN", NOW + timedelta(days=365)),
         )
         sid = cur.fetchone()[0]
         if wipe:
             for tbl in ("ScoreHistory", "Action", "Suppression", "Order", "Customer"):
                 cur.execute(f'DELETE FROM "{tbl}" WHERE "storeId"=%s', (sid,))
+        # Namespace sim IDs per store — Customer.id/Order.id are GLOBAL primary keys, so the
+        # same sim-c-* can't live in two tenants. Prefix keeps each store's rows unique while
+        # still matching the cleanup's `LIKE 'sim-%'`.
+        tag = "".join(ch for ch in shop.lower() if ch.isalnum())[:14]
+        def nid(x: str) -> str:
+            return x.replace("sim-", f"sim-{tag}-", 1)
         # Customers
         crows = [(
-            r.customer_id, sid, f"{r.customer_id}@sim.example.com",
+            nid(r.customer_id), sid, f"{nid(r.customer_id)}@sim.example.com",
             r.archetype.split("_")[0].capitalize(), "Sim",
             r.signup_date.to_pydatetime() if hasattr(r.signup_date, "to_pydatetime") else r.signup_date,
             float(r.total_spent), int(r.total_orders),
@@ -191,14 +204,43 @@ def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, wipe: bool) -> None:
         # Orders (exclude cancelled — the schema has no cancelled state)
         live = orders[~orders.cancelled]
         orows = [(
-            o.order_id, sid, o.customer_id, float(o.amount), bool(o.refunded), "Simulator",
+            nid(o.order_id), sid, nid(o.customer_id), float(o.amount), bool(o.refunded), "Simulator",
             o.created_at.to_pydatetime() if hasattr(o.created_at, "to_pydatetime") else o.created_at,
         ) for o in live.itertuples()]
         execute_values(cur,
             'INSERT INTO "Order" (id,"storeId","customerId","totalPrice",refunded,source,"createdAt") '
             'VALUES %s ON CONFLICT (id) DO NOTHING', orows)
         conn.commit()
-    print(f"[db] sim store '{SIM_SHOP}': {len(custs_df)} customers, {int((~orders.cancelled).sum())} live orders written")
+    print(f"[db] store '{shop}': {len(custs_df)} customers, {int((~orders.cancelled).sum())} live orders written")
+
+
+def load_existing(shop: str, wipe: bool) -> None:
+    """Push the already-generated rich exports into a target store (append by default)."""
+    cust_df = pd.read_csv(EXPORTS / "customers_rich.csv",
+                          parse_dates=["signup_date", "first_purchase", "last_purchase", "churn_date"])
+    orders = pd.read_csv(EXPORTS / "orders_rich.csv", parse_dates=["created_at"])
+    write_db(cust_df, orders, shop=shop, wipe=wipe)
+
+
+def cleanup(shop: str) -> None:
+    """Remove ONLY simulated rows (id LIKE 'sim-%') from a store, restoring real data."""
+    import psycopg2
+    dsn = _dsn()
+    if not dsn:
+        raise SystemExit("No DIRECT_URL/DATABASE_URL in ../.env")
+    with psycopg2.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute('SELECT id FROM "Store" WHERE "shopDomain"=%s', (shop,))
+        row = cur.fetchone()
+        if not row:
+            raise SystemExit(f"store '{shop}' not found")
+        sid = row[0]
+        deleted = {}
+        for tbl, col in (("ScoreHistory", "customerId"), ("Action", "customerId"),
+                         ("Suppression", "customerId"), ("Order", "id"), ("Customer", "id")):
+            cur.execute(f'DELETE FROM "{tbl}" WHERE "storeId"=%s AND "{col}" LIKE %s', (sid, "sim-%"))
+            deleted[tbl] = cur.rowcount
+        conn.commit()
+    print(f"[cleanup] '{shop}': removed {deleted}")
 
 
 # --------------------------------------------------------------------------- modes
@@ -283,11 +325,19 @@ def main() -> None:
     sub = ap.add_subparsers(dest="mode", required=True)
     b = sub.add_parser("backfill"); b.add_argument("--months", type=int, default=18); b.add_argument("--to-db", action="store_true")
     d = sub.add_parser("day"); d.add_argument("--to-db", action="store_true")
+    l = sub.add_parser("load", help="push existing exports into a store (append-safe)")
+    l.add_argument("--shop", required=True); l.add_argument("--wipe", action="store_true")
+    cl = sub.add_parser("cleanup", help="remove only sim-* rows from a store")
+    cl.add_argument("--shop", required=True)
     a = ap.parse_args()
     if a.mode == "backfill":
         run_backfill(a.months, a.to_db)
-    else:
+    elif a.mode == "day":
         run_day(a.to_db)
+    elif a.mode == "load":
+        load_existing(a.shop, a.wipe)
+    elif a.mode == "cleanup":
+        cleanup(a.shop)
 
 
 if __name__ == "__main__":

@@ -38,7 +38,20 @@ python -m venv .venv && . .venv/Scripts/activate && pip install -r requirements.
 python simulate.py backfill --months 18            # past history -> exports/
 python simulate.py backfill --months 18 --to-db    # ...and project into the sim DB tenant
 python simulate.py day --to-db                      # one day's activity (append) — cron this later
+
+# Load the generated exports into ANY store (append-safe; IDs namespaced per store
+# so the same data can populate multiple tenants without PK collisions):
+python simulate.py load --shop altvary-store.myshopify.com
+# Remove ONLY simulated rows (id LIKE 'sim-%') from a store, restoring real data:
+python simulate.py cleanup --shop altvary-store.myshopify.com
 ```
+
+> **Loading into the real dev/demo store** lets you exercise the app UI with realistic
+> volume — but it mixes thousands of `@sim.example.com` customers into the store App Store
+> reviewers will see, and large stores make the nightly scoring cron slow (scoring ~8k
+> customers currently takes ~230s — see the scoring-perf note). **Run `cleanup` before
+> submission** to restore the demo store, and keep loaded volume modest unless scoring is
+> sped up.
 
 ## Feeding the ML harness
 Once data is in the sim tenant, the churn/LTV harness runs against it directly:
