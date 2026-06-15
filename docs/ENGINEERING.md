@@ -132,9 +132,11 @@ Format: `### YYYY-MM-DD — short title` + what changed + why + verification, an
 
 ---
 
-## 🏷️ Release v1.0.0 — 2026-06-15
+## 🏷️ Release candidate v1.0.0-rc.1 — 2026-06-15
 
-First stable release (tag `v1.0.0`). Phase wrap-up. Highlights since the initial deploy:
+Phase wrap-up: the v1 feature set is complete and stabilizing, but **pre-launch** (tag `v1.0.0-rc.1`).
+**`1.0.0` is reserved for App Store go-live** (the moment merchants can publicly install it) — that's
+what 1.0.0 should mark, not "code complete." Highlights since the initial deploy:
 - **Real-time Klaviyo sync** — two-speed (order webhook + nightly bulk) push of `altvary_rfme_score`
   / `altvary_lifecycle_tier` onto profiles, with **auto/manual mode** + on-demand "Sync now".
   Verified end-to-end live (both bulk and webhook paths).
@@ -145,8 +147,9 @@ First stable release (tag `v1.0.0`). Phase wrap-up. Highlights since the initial
   non-blocking (`after()`), per-store currency, merchant-tunable RFME weights.
 - **Ops**: Supabase Auth production URLs configured.
 
-Pre-submission items remaining (non-code): Shopify **compliance webhook URLs** (+ release a version),
-**listing assets** (icon + screenshots). **Deferred (non-blocking):** custom SMTP (needs a sending domain).
+Before promoting to **`1.0.0`** (non-code): Shopify **compliance webhook URLs** (+ release a version),
+**listing assets** (icon + screenshots), then submit & get approved. **Deferred (non-blocking):** custom
+SMTP (needs a sending domain).
 
 ---
 
