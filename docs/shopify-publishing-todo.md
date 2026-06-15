@@ -34,14 +34,20 @@ What remains is mostly listing content + two config toggles — no core engineer
       (verify they're saved in the active version)
 
 ## 🔐 Pre-launch hardening
-- [ ] **Verify the live Klaviyo round-trip** (shipped 2026-06-15, `5303793`, but not yet exercised
-      end-to-end). Steps: Settings → Klaviyo sync → paste a real Klaviyo **private API key** (the
-      key is validated before saving) → place a test order on the connected store → confirm
-      `altvary_last_order_at` updates on that customer's Klaviyo profile within seconds (webhook
-      freshness override) → run a scoring recompute (Settings → Recompute now) → confirm
-      `altvary_rfme_score` + `altvary_lifecycle_tier` populate across profiles (nightly bulk
-      reconciliation). ⚠️ All Klaviyo calls are intentionally **best-effort / non-fatal**, so a bad
-      key or wrong scope fails *silently* — this manual check is the only thing that proves it works.
+- [x] **Live Klaviyo round-trip VERIFIED (2026-06-15).** Connected a real Klaviyo private key
+      (validated before saving), synced the dev store, and confirmed a customer profile (Aiko
+      Anderson) now carries all three custom properties: `altvary_rfme_score` (82),
+      `altvary_lifecycle_tier` (VIP), and `altvary_last_order_at` (the synced order time). Proves
+      the bulk reconciliation path end-to-end (Resync → backfill → scoring → Klaviyo bulk import).
+      Surfaced + fixed two issues in the process: data webhooks weren't registered on the dev store
+      (now registered on backfill, `ee20546`) and the Resync route 504'd by syncing all stores
+      synchronously (now scoped + `after()`, `2173c2a`).
+      - [ ] *Optional final confirmation:* place a brand-new order and watch `altvary_last_order_at`
+        update on that profile within seconds **without** a resync — proves the live `orders/create`
+        webhook freshness override specifically (registration is confirmed; the push path is the same
+        upsert the bulk sync already exercised).
+      - ⚠️ All Klaviyo calls are best-effort / non-fatal by design, so a bad key or wrong scope fails
+        *silently* — re-verify on any real merchant store before relying on it for them.
 - [ ] Flip `SHOPIFY_BILLING_TEST=false` only if/when charging real money (keep free for now → leave billing disabled)
 - [ ] Rotate the Shopify API secret if it was ever shared in plaintext; confirm Vercel env matches
 - [ ] Replace the manually-set test password on `alextheous@gmail.com` with proper magic-link login once SMTP is live
