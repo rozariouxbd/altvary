@@ -130,7 +130,7 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
-### 2026-06-15 — Real-time Klaviyo sync (two-speed: webhook + nightly) · `_______`
+### 2026-06-15 — Real-time Klaviyo sync (two-speed: webhook + nightly) · `5303793`
 - **What.** New optional per-store Klaviyo integration. `lib/klaviyo.ts` (encrypted key storage,
   `verifyKey`, single-profile upsert via `/profile-import/`, bulk import via
   `/profile-bulk-import-jobs/`, GDPR scrub). Appends `altvary_rfme_score`,
