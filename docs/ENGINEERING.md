@@ -130,6 +130,20 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
+### 2026-06-15 — Register data webhooks on backfill (fixes dev-store real-time gap) · `_______`
+- **What.** `backfillStore` now calls `registerWebhooks` (idempotent) right after fetching the
+  token. Previously webhook registration lived *only* in the OAuth callback, so the org dev store
+  (`altvary-store.myshopify.com`, `tokenType=client_credentials`, connected without the auth-code
+  flow) had **no `orders/create` subscription** — its real-time order sync silently never fired.
+- **Why.** Found while verifying Klaviyo sync: a live test order updated Klaviyo's *native*
+  integration but never reached our `/api/webhooks`; the customer's row stayed `orderCount=0`,
+  `lastOrderAt=null`, so `altvary_last_order_at` was never pushed. Confirmed via DB: store had 170
+  orders, latest Jun 11, **0 in the last 24h**. Real external merchants were unaffected (they
+  install via OAuth → callback registers webhooks), but the dev store — our main test surface —
+  couldn't exercise the real-time path. Registering on backfill/resync covers it and any re-sync.
+- **Verification.** `npx tsc --noEmit` clean. Post-deploy: trigger a Resync (registers the webhook
+  on the dev store), place a test order, confirm `altvary_last_order_at` appears on the profile.
+
 ### 2026-06-15 — Real-time Klaviyo sync (two-speed: webhook + nightly) · `5303793`
 - **What.** New optional per-store Klaviyo integration. `lib/klaviyo.ts` (encrypted key storage,
   `verifyKey`, single-profile upsert via `/profile-import/`, bulk import via

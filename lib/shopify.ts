@@ -285,6 +285,13 @@ export async function backfillStore(store: Store): Promise<{ customers: number; 
   // Always use a fresh (auto-refreshing) token rather than the stored one.
   const token = await getStoreToken(store.shopDomain);
 
+  // Ensure data webhooks (orders/create etc.) exist for this store. Registration
+  // normally happens in the OAuth callback, but stores connected via the
+  // client-credentials grant (the org dev store) never hit that path — without
+  // this, their real-time order sync silently never fires. Idempotent: Shopify
+  // ignores a duplicate topic+address, and each call is already best-effort.
+  await registerWebhooks(store.shopDomain, token).catch(() => {});
+
   // Keep the store's display currency in sync with its Shopify default. All synced
   // amounts are already in this currency — this drives formatting only. Non-fatal:
   // a failure here must never block the data backfill.
