@@ -54,11 +54,15 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   // Cross-cutting filters (search + order/recency) — applied to BOTH the list and the tile counts.
   const baseWhere: Prisma.CustomerWhereInput = { storeId: store.id };
   if (q) {
-    baseWhere.OR = [
-      { firstName: { contains: q, mode: "insensitive" } },
-      { lastName: { contains: q, mode: "insensitive" } },
-      { email: { contains: q, mode: "insensitive" } },
-    ];
+    // Match each term against any field (AND across terms) so a full-name query
+    // like "Aiko Anderson" matches when terms hit different fields.
+    baseWhere.AND = q.split(/\s+/).filter(Boolean).map((t): Prisma.CustomerWhereInput => ({
+      OR: [
+        { firstName: { contains: t, mode: "insensitive" } },
+        { lastName: { contains: t, mode: "insensitive" } },
+        { email: { contains: t, mode: "insensitive" } },
+      ],
+    }));
   }
   if (minOrders > 0) baseWhere.orderCount = { gte: minOrders };
   if (lastOrderDays > 0) baseWhere.lastOrderAt = { gte: new Date(Date.now() - lastOrderDays * 86_400_000) };

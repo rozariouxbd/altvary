@@ -11,15 +11,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ customers: [], products: [], plays: [], currency: store?.currency ?? "USD" });
   }
 
+  // Split into terms so a full-name query ("Aiko Anderson") matches when each
+  // term hits a *different* field — "Aiko" the first name, "Anderson" the last.
+  // Each term must match some field (AND across terms, OR across fields).
+  const terms = q.split(/\s+/).filter(Boolean);
+
   const [customers, products] = await Promise.all([
     prisma.customer.findMany({
       where: {
         storeId: store.id,
-        OR: [
-          { firstName: { contains: q, mode: "insensitive" } },
-          { lastName: { contains: q, mode: "insensitive" } },
-          { email: { contains: q, mode: "insensitive" } },
-        ],
+        AND: terms.map((t) => ({
+          OR: [
+            { firstName: { contains: t, mode: "insensitive" as const } },
+            { lastName: { contains: t, mode: "insensitive" as const } },
+            { email: { contains: t, mode: "insensitive" as const } },
+          ],
+        })),
       },
       orderBy: { rfmeScore: "desc" },
       take: 6,
@@ -28,19 +35,24 @@ export async function GET(req: NextRequest) {
     prisma.product.findMany({
       where: {
         storeId: store.id,
-        OR: [
-          { title: { contains: q, mode: "insensitive" } },
-          { sku: { contains: q, mode: "insensitive" } },
-        ],
+        AND: terms.map((t) => ({
+          OR: [
+            { title: { contains: t, mode: "insensitive" as const } },
+            { sku: { contains: t, mode: "insensitive" as const } },
+          ],
+        })),
       },
       take: 6,
       select: { id: true, title: true, sku: true, inventoryQty: true },
     }),
   ]);
 
-  const ql = q.toLowerCase();
+  const lowerTerms = terms.map((t) => t.toLowerCase());
   const plays = REGISTRY
-    .filter((p) => p.code.toLowerCase().includes(ql) || p.name.toLowerCase().includes(ql) || p.description.toLowerCase().includes(ql))
+    .filter((p) => {
+      const hay = `${p.code} ${p.name} ${p.description}`.toLowerCase();
+      return lowerTerms.every((t) => hay.includes(t));
+    })
     .slice(0, 6)
     .map((p) => ({ code: p.code, name: p.name, description: p.description }));
 

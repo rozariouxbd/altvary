@@ -130,6 +130,16 @@ Format: **Decision** — rationale — *effect / trade-off*.
 Newest first. **Add an entry for every meaningful change** (feature, fix, schema, decision).
 Format: `### YYYY-MM-DD — short title` + what changed + why + verification, and the commit SHA.
 
+### 2026-06-15 — Fix full-name search (multi-term matching) · `_______`
+- **What.** Searching a full name ("Aiko Anderson") returned no results even when the customer
+  existed. Both the global search (`/api/search`) and the Customers list page matched the *whole*
+  query against `firstName`/`lastName`/`email` individually, so a "First Last" string hit no single
+  field. Now the query is split into terms; each term must match some field (AND across terms, OR
+  across fields), so "Aiko" matches the first name and "Anderson" the last. Applied to customers,
+  products, and the play filter.
+- **Verification.** `tsc` + `next build` clean; confirmed against the live DB that the new
+  AND-of-terms predicate matches the previously-missing customer.
+
 ### 2026-06-15 — Fix Resync 504 + scope to current store · `2173c2a`
 - **What.** `/api/shopify/sync` backfilled **every** store synchronously in one request, which
   504'd (`FUNCTION_INVOCATION_TIMEOUT`) on the dev store (1,034 customers) and also let one
