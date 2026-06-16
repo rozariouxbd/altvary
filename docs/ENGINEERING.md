@@ -235,6 +235,23 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-16 — Skincare Phase 2: Routine Gaps (R09) + Inventory-Aware R06 · `_______` (branch `skincare-phase2`)
+- **What.** Two more skincare plays on the existing foundation. **Routine Gaps (R09):**
+  `computeRoutineGaps` (lib/engine/exhaustion.ts) finds the first missing core step
+  (Cleanse→Treat→Hydrate→Protect) from a customer's line-item categories; persisted as
+  `Customer.routineGap`; new R09 play cross-sells the missing step; Klaviyo `altvary_routine_gap`.
+  **Inventory-Aware:** `computeReplenishment` now also flags whether the soonest-depleting product
+  is out of stock → `Customer.replenishOos`; R06 segment excludes OOS (don't nudge a repurchase of
+  a sold-out item; flips back on restock); Klaviyo `altvary_replenish_oos`. Both plays gated behind
+  `SKINCARE_FEATURES_ENABLED`; signals shown in the recommendations detail view.
+- **Schema.** `Customer.routineGap` (text), `Customer.replenishOos` (bool) — migration
+  `add_customer_routine_oos`. Written via the same chunked bulk UPDATE in `runScoring`.
+- **Verification.** `tsc` + `next build` clean. On 6.9k sim customers (Serum + Eye Cream set OOS):
+  R09 flagged **1,717** (Cleanser 709 / Serum 480 / Moisturizer 344 / Sunscreen 184); R06 window
+  **363 → 259** in the play with **104 excluded** as OOS; 5.9s. Sim tenant cleaned up after.
+- **Deferred (full inventory spec):** auto-redirect flows to a secondary product, and an explicit
+  restock event to the at-risk-for-SKU segment (currently handled implicitly by the OOS flag flipping).
+
 ### 2026-06-15 — Skincare foundation + Volumetric Exhaustion (Phase 1) · `1af7914` (branch `skincare-mechanics`)
 - **What.** First slice of the skincare roadmap. **Foundation:** `OrderLineItem` model (which products
   were in which order — the keystone) captured in backfill + `orders/*` webhook (+ GDPR redact);

@@ -146,6 +146,12 @@ model Customer {
   // active products, and days until then. Computed in runScoring from line items.
   replenishDueAt  DateTime?
   daysToDepletion Int?
+  // True when that soonest-depleting product is currently out of stock (inventory-aware:
+  // hold the replenishment nudge until it's back). Computed alongside replenishDueAt.
+  replenishOos    Boolean   @default(false)
+  // Missing core routine step (e.g. "Moisturizer") for routine-gap cross-sell, or null
+  // if the customer's routine is complete / too sparse to judge. Computed in runScoring.
+  routineGap      String?
   store        Store          @relation(fields: [storeId], references: [id])
   orders       Order[]
   actions      Action[]

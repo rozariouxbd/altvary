@@ -1,7 +1,7 @@
 import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { bulkSyncProfiles } from "../klaviyo";
-import { computeReplenishment } from "./exhaustion";
+import { computeReplenishment, computeRoutineGaps } from "./exhaustion";
 
 const DAY = 86_400_000;
 
@@ -256,10 +256,14 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
     // product volume). Reset stale values, then write the freshly-computed ones via
     // the same chunked bulk UPDATE. No-ops gracefully when products lack volume
     // metadata. Read by R06, the dashboard, and the Klaviyo sync below.
-    const replen = await computeReplenishment(store.id);
+    const [replen, routineGaps] = await Promise.all([
+      computeReplenishment(store.id),
+      computeRoutineGaps(store.id),
+    ]);
+    // Reset stale skincare-derived fields, then write the freshly-computed ones.
     await prisma.customer.updateMany({
-      where: { storeId: store.id, OR: [{ replenishDueAt: { not: null } }, { daysToDepletion: { not: null } }] },
-      data: { replenishDueAt: null, daysToDepletion: null },
+      where: { storeId: store.id },
+      data: { replenishDueAt: null, daysToDepletion: null, replenishOos: false, routineGap: null },
     });
     const repEntries = [...replen.entries()];
     for (let i = 0; i < repEntries.length; i += 1000) {
@@ -267,13 +271,30 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       const tuples: string[] = [];
       const vals: unknown[] = [];
       chunk.forEach(([cid, r], j) => {
-        const b = j * 3;
-        tuples.push(`($${b + 1},$${b + 2},$${b + 3})`);
-        vals.push(cid, r.replenishDueAt, r.daysToDepletion);
+        const b = j * 4;
+        tuples.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4})`);
+        vals.push(cid, r.replenishDueAt, r.daysToDepletion, r.oos);
       });
       await prisma.$executeRawUnsafe(
-        `UPDATE "Customer" AS c SET "replenishDueAt" = v.due::timestamp, "daysToDepletion" = v.dtd::int
-         FROM (VALUES ${tuples.join(",")}) AS v(id, due, dtd) WHERE c.id = v.id`,
+        `UPDATE "Customer" AS c SET "replenishDueAt" = v.due::timestamp, "daysToDepletion" = v.dtd::int,
+           "replenishOos" = v.oos::boolean
+         FROM (VALUES ${tuples.join(",")}) AS v(id, due, dtd, oos) WHERE c.id = v.id`,
+        ...vals,
+      );
+    }
+    const gapEntries = [...routineGaps.entries()];
+    for (let i = 0; i < gapEntries.length; i += 1000) {
+      const chunk = gapEntries.slice(i, i + 1000);
+      const tuples: string[] = [];
+      const vals: unknown[] = [];
+      chunk.forEach(([cid, gap], j) => {
+        const b = j * 2;
+        tuples.push(`($${b + 1},$${b + 2})`);
+        vals.push(cid, gap);
+      });
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Customer" AS c SET "routineGap" = v.gap
+         FROM (VALUES ${tuples.join(",")}) AS v(id, gap) WHERE c.id = v.id`,
         ...vals,
       );
     }
@@ -291,6 +312,8 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
           return {
             email: c.email, rfmeScore: s.score, segment: s.segment, lastOrderAt: c.lastOrderAt,
             replenishDueAt: replen.get(s.id)?.replenishDueAt ?? null,
+            replenishOos: replen.get(s.id)?.oos ?? false,
+            routineGap: routineGaps.get(s.id) ?? null,
           };
         })
       ).catch(() => {});

@@ -14,6 +14,8 @@ const PROP_TIER = "altvary_lifecycle_tier";
 const PROP_LAST_ORDER = "altvary_last_order_at";
 const PROP_REPLENISH_DUE = "altvary_replenish_due";       // soonest product-depletion date
 const PROP_DAYS_TO_DEPLETION = "altvary_days_to_depletion"; // days until then (negative = overdue)
+const PROP_REPLENISH_OOS = "altvary_replenish_oos";       // soonest-depleting product is out of stock
+const PROP_ROUTINE_GAP = "altvary_routine_gap";           // missing core routine step (cross-sell)
 
 const DAY = 86_400_000;
 
@@ -90,7 +92,7 @@ export async function verifyKey(rawKey: string): Promise<boolean> {
 // ── Property mapping ───────────────────────────────────────────────────────────
 
 function fullScoreProps(
-  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt">,
+  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap">,
 ): Record<string, unknown> {
   const props: Record<string, unknown> = {};
   if (c.rfmeScore != null) props[PROP_SCORE] = Math.round(c.rfmeScore);
@@ -100,7 +102,9 @@ function fullScoreProps(
   if (c.replenishDueAt) {
     props[PROP_REPLENISH_DUE] = c.replenishDueAt.toISOString();
     props[PROP_DAYS_TO_DEPLETION] = Math.round((c.replenishDueAt.getTime() - Date.now()) / DAY);
+    props[PROP_REPLENISH_OOS] = !!c.replenishOos; // flows hold the nudge when true
   }
+  if (c.routineGap) props[PROP_ROUTINE_GAP] = c.routineGap;
   return props;
 }
 
@@ -161,12 +165,13 @@ export async function redactProfile(store: Pick<Store, "klaviyoApiKey">, email: 
   await upsertProfile(key, email, {
     [PROP_SCORE]: null, [PROP_TIER]: null, [PROP_LAST_ORDER]: null,
     [PROP_REPLENISH_DUE]: null, [PROP_DAYS_TO_DEPLETION]: null,
+    [PROP_REPLENISH_OOS]: null, [PROP_ROUTINE_GAP]: null,
   });
 }
 
 // ── Bulk reconciliation (the nightly path) ────────────────────────────────────
 
-type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt">;
+type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap">;
 
 /** Klaviyo's bulk import job accepts up to 10,000 profiles per request. */
 const BULK_LIMIT = 10_000;
@@ -221,7 +226,7 @@ export async function bulkSyncProfiles(store: Store, customers: SyncableCustomer
 export async function syncStoreNow(store: Store): Promise<number> {
   const customers = await prisma.customer.findMany({
     where: { storeId: store.id },
-    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true },
+    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true, replenishOos: true, routineGap: true },
   });
   return bulkSyncProfiles(store, customers);
 }

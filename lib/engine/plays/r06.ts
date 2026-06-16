@@ -15,9 +15,12 @@ export const R06: PlayDefinition = {
   layer: "replenish",
   description: "Customers whose product is about to run out — replenishment timed to real usage, not the calendar.",
 
+  // In the depletion window AND in stock — inventory-aware: don't nudge a repurchase of
+  // a product that's currently out of stock (replenishOos flips back on restock).
   segment: (store) => ({
     storeId: store.id,
     daysToDepletion: { gte: -30, lte: 7 },
+    replenishOos: false,
   }),
 
   // Expected value = one average order.
