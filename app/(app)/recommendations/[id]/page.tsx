@@ -38,6 +38,11 @@ function signalText(playId: string, c: Customer, s: CustomerSignal | undefined, 
       return s?.scoreDrop7d != null ? `score ↓${s.scoreDrop7d} (was ${s.prevScore7d})` : "—";
     case "R05":
       return s?.cycleDays != null ? `${s.cycleDays}d cycle · ${s.daysSinceLastOrder}d since` : "—";
+    case "R06": {
+      const d = c.daysToDepletion;
+      if (d == null) return "—";
+      return d < 0 ? `overdue ${-d}d` : d === 0 ? "due today" : `${d}d left`;
+    }
     case "R07": return `1st order ${formatMoney(c.totalSpent, currency)}`;
     case "R08": return `${c.orderCount} orders · ${formatMoney(c.totalSpent, currency)} LTV`;
     default: return "—";
