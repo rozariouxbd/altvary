@@ -235,6 +235,30 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-15 — Skincare foundation + Volumetric Exhaustion (Phase 1) · `_______` (branch `skincare-mechanics`)
+- **What.** First slice of the skincare roadmap. **Foundation:** `OrderLineItem` model (which products
+  were in which order — the keystone) captured in backfill + `orders/*` webhook (+ GDPR redact);
+  `Product` skincare metadata (`volumeMl`, `dailyUsageMl`, `category`, `ingredients`, `paoDays`, `cost`,
+  …) populated from Shopify metafields via a per-store `metafieldMapping` + a Day-1 **Mapping Wizard**
+  (`/settings/mapping`); `products/create|update` webhooks. **Flagship — Volumetric Exhaustion:**
+  `lib/skincare.ts` (mapping resolver + lifespan math, category-default usage) + `lib/engine/exhaustion.ts`
+  compute soonest product-depletion per customer (volume ÷ usage); `runScoring` bulk-writes
+  `Customer.replenishDueAt`/`daysToDepletion`; the `orders/create` webhook recomputes it real-time
+  ("a fresh order resets the clock"); Klaviyo gets `altvary_replenish_due` (+ `altvary_days_to_depletion`)
+  on both paths; new **R06 "Product exhaustion"** play gated behind `SKINCARE_FEATURES_ENABLED`.
+- **Why.** Replenishment timed to physical usage, not arbitrary calendars (50 ml moisturizer → due ~day
+  45, not a generic 30/60/90). Built on the existing two-speed sync + bulk-update + play patterns.
+- **Decisions.** Klaviyo delivery is **profile properties** (no flow-pause API). `OrderLineItem.productId`
+  has **no enforced FK to Product** (line items can reference deleted/unsynced variants) — joined in
+  queries. Everything **degrades gracefully** when products lack volume metadata.
+- **Verification.** `tsc` + `next build` clean. Simulator extended (line items + product volume) →
+  loaded 6.9k customers / 17.3k line items / 33 products into an isolated sim tenant → ran the real
+  `runScoring`: 4,437 customers got `replenishDueAt`, 369 fell in the R06 window (−30…7d), in 6.7s
+  (bulk-update perf holds). Sim tenant cleaned up after. Migrations `add_order_line_items`,
+  `add_product_metadata`, `add_customer_replenish`, `add_store_metafield_mapping` applied.
+- **Not built (later phases):** routine gaps, ingredient auto-suppression (+ refunds webhook), margin
+  alert, household profiling, PAO/freshness (+ fulfillment webhook), inventory-aware filters.
+
 ### 2026-06-15 — Bulk-update scoring writes (230s → sub-second at 8k) · `4a59987`
 - **What.** `runScoring` wrote customer scores as thousands of per-row `prisma.customer.update`
   calls (batched 25 at a time). Replaced with a handful of chunked `UPDATE ... FROM (VALUES …)`

@@ -43,3 +43,12 @@ next-env.d.ts
 /app/generated/prisma
 
 .vercel
+
+# Python tooling (ml/, sim/) — never commit virtualenvs, caches, or generated data
+**/.venv/
+**/__pycache__/
+**/*.pyc
+ml/data/
+sim/exports/
+sim/data/
+ml/results.md

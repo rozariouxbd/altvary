@@ -287,6 +287,20 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </div>
         </div>
 
+        {/* Product data mapping (skincare metafields) */}
+        <div className="card" style={{ marginTop: 18 }}>
+          <div className="card-head">
+            <div><div className="card-title">Product data mapping</div><div className="card-sub">Point Altvary at your Shopify product fields (volume, category, ingredients…)</div></div>
+            <span className={`tag ${store?.metafieldMapping ? "pos" : ""}`}><span className={`dot ${store?.metafieldMapping ? "pos" : ""}`}></span> {store?.metafieldMapping ? "Mapped" : "Not set up"}</span>
+          </div>
+          <div className="card-pad" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.5 }}>
+              Map product <b>volume</b> + <b>category</b> to unlock product-exhaustion replenishment timing (and more skincare features as they ship).
+            </span>
+            <a href="/settings/mapping" className="btn btn-primary btn-sm" style={{ flexShrink: 0 }}><i className="ti ti-wand" /> Open mapping wizard</a>
+          </div>
+        </div>
+
         <div className="note" style={{ marginTop: 18 }}>
           <i className="ti ti-shield-check"></i>
           <span>All configuration changes apply within {storeName}&apos;s isolated silo — no cross-merchant data is affected.</span>

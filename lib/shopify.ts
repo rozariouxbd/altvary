@@ -4,6 +4,8 @@ import { prisma } from "./prisma";
 import { encrypt, decrypt } from "./crypto";
 import { runScoring } from "./engine/scoring";
 import { syncOrderFreshness, redactProfile } from "./klaviyo";
+import { resolveProductMetadata, mappingUsesMetafields, type MetafieldMapping } from "./skincare";
+import { computeReplenishmentForCustomer } from "./engine/exhaustion";
 
 export const API_VERSION = "2025-01";
 const SCOPES = process.env.SHOPIFY_SCOPES ?? "read_orders,read_customers,read_products";
@@ -201,10 +203,21 @@ async function registerWebhook(shop: string, token: string, topic: string): Prom
 
 export async function registerWebhooks(shop: string, token: string): Promise<void> {
   await Promise.all(
-    ["orders/create", "orders/updated", "customers/create", "customers/update"].map((t) =>
+    ["orders/create", "orders/updated", "customers/create", "customers/update",
+     "products/create", "products/update"].map((t) =>
       registerWebhook(shop, token, t).catch(() => {})
     )
   );
+}
+
+/** Fetch one product's metafields as a { "namespace.key": value } lookup. */
+async function fetchProductMetafields(shop: string, token: string, productId: number): Promise<Record<string, string>> {
+  const { data } = await adminGet<{ metafields: { namespace: string; key: string; value: string }[] }>(
+    shop, token, `products/${productId}/metafields.json`,
+  );
+  const out: Record<string, string> = {};
+  for (const m of data.metafields ?? []) out[`${m.namespace}.${m.key}`] = m.value;
+  return out;
 }
 
 // ── Backfill ──────────────────────────────────────────────────────────────────
@@ -215,6 +228,7 @@ interface ShopifyCustomer {
 }
 interface ShopifyProduct {
   id: number; title: string; status: string;
+  product_type?: string | null; tags?: string | null;
   variants: { id: number; sku: string | null; price: string; title: string; inventory_quantity: number | null }[];
 }
 
@@ -230,17 +244,25 @@ interface ShopifyRedactPayload {
 /** Pull a store's products + variants (stock + price) for inventory signals. */
 export async function backfillProducts(store: Store): Promise<number> {
   const token = await getStoreToken(store.shopDomain);
+  // Merchant's metafield mapping (Day-1 wizard) — drives skincare metadata. Only fetch
+  // per-product metafields when the mapping actually references one (avoids N+1 otherwise).
+  const mapping = (store.metafieldMapping ?? null) as MetafieldMapping | null;
+  const needMetafields = mappingUsesMetafields(mapping);
   let count = 0;
   let pageInfo: string | null = null;
   do {
     const q: string = pageInfo ? `products.json?limit=100&page_info=${pageInfo}` : `products.json?limit=100`;
     const { data, nextPageInfo } = await adminGet<{ products: ShopifyProduct[] }>(store.shopDomain, token, q);
     for (const p of data.products) {
+      const metafields = needMetafields
+        ? await fetchProductMetafields(store.shopDomain, token, p.id).catch(() => undefined)
+        : undefined;
+      const meta = resolveProductMetadata(mapping, { product_type: p.product_type, tags: p.tags, metafields });
       for (const v of p.variants) {
         const title = p.title + (v.title && v.title !== "Default Title" ? ` — ${v.title}` : "");
         const fields = {
           title, sku: v.sku || null, price: Number(v.price) || 0,
-          inventoryQty: v.inventory_quantity ?? 0, status: p.status,
+          inventoryQty: v.inventory_quantity ?? 0, status: p.status, ...meta,
         };
         await prisma.product.upsert({
           where: { id: String(v.id) },
@@ -254,11 +276,20 @@ export async function backfillProducts(store: Store): Promise<number> {
   } while (pageInfo);
   return count;
 }
+interface ShopifyLineItem {
+  id: number;
+  variant_id: number | null;
+  product_id: number | null;
+  title: string;
+  quantity: number;
+  price: string;
+}
 interface ShopifyOrder {
   id: number; total_price: string; financial_status: string | null; created_at: string;
   customer: { id: number } | null;
   refunds?: { id: number }[];
   source_name?: string | null;
+  line_items?: ShopifyLineItem[];
 }
 
 /** Map Shopify's raw source_name to a friendly channel label. */
@@ -278,6 +309,30 @@ function isRefunded(o: ShopifyOrder): boolean {
     o.financial_status === "partially_refunded" ||
     (o.refunds?.length ?? 0) > 0
   );
+}
+
+/**
+ * Replace an order's line items — the keystone for skincare features (which products were
+ * in which order). Idempotent: clears + rewrites, so re-syncs and orders/updated stay
+ * correct. Uses variant_id as productId (→ Product.id), falling back to product_id.
+ */
+async function writeLineItems(
+  storeId: string, orderId: string, customerId: string, createdAt: Date,
+  items: ShopifyLineItem[] | undefined,
+): Promise<void> {
+  if (!items?.length) return;
+  const rows = items
+    .map((li) => {
+      const productId = li.variant_id != null ? String(li.variant_id)
+        : li.product_id != null ? String(li.product_id) : null;
+      if (!productId) return null;
+      const price = Number(li.price) || 0;
+      const quantity = li.quantity || 1;
+      return { storeId, orderId, customerId, productId, title: li.title ?? "", quantity, price, lineTotal: price * quantity, createdAt };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+  await prisma.orderLineItem.deleteMany({ where: { orderId } });
+  if (rows.length) await prisma.orderLineItem.createMany({ data: rows });
 }
 
 /** Pull a store's full customer + order history from Shopify, then score it. */
@@ -358,6 +413,7 @@ export async function backfillStore(store: Store): Promise<{ customers: number; 
           source: channelLabel(o.source_name),
         },
       });
+      await writeLineItems(store.id, String(o.id), customerId, createdAt, o.line_items);
       orderCount++;
       const prev = lastOrderByCustomer.get(customerId);
       if (!prev || createdAt > prev) lastOrderByCustomer.set(customerId, createdAt);
@@ -431,15 +487,23 @@ export async function handleWebhook(
           source: channelLabel(o.source_name),
         },
       });
+      await writeLineItems(store.id, String(o.id), customerId, new Date(o.created_at), o.line_items);
       await recomputeAggregates(store.id, customerId);
+      // Recompute this customer's soonest product depletion — a fresh order of a
+      // product resets its clock ("applies the brakes"). Persist + push to Klaviyo.
+      const replen = await computeReplenishmentForCustomer(store.id, customerId).catch(() => null);
+      await prisma.customer.update({
+        where: { id: customerId },
+        data: { replenishDueAt: replen?.replenishDueAt ?? null, daysToDepletion: replen?.daysToDepletion ?? null },
+      }).catch(() => {});
       // Real-time Klaviyo freshness override: the customer just ordered, so push
-      // their new last-order date and lift them out of any lapsed tier before a
-      // win-back flow can misfire. No-ops if Klaviyo isn't connected. Non-fatal.
+      // their new last-order date, lift them out of any lapsed tier, and refresh the
+      // replenishment date before a win-back flow can misfire. Non-fatal.
       const c = await prisma.customer.findUnique({
         where: { id: customerId },
         select: { email: true, segment: true },
       });
-      if (c) await syncOrderFreshness(store, c, new Date(o.created_at)).catch(() => {});
+      if (c) await syncOrderFreshness(store, c, new Date(o.created_at), replen?.replenishDueAt ?? null).catch(() => {});
       return;
     }
     case "customers/create":
@@ -456,6 +520,28 @@ export async function handleWebhook(
           email: c.email ?? "", firstName: c.first_name, lastName: c.last_name,
         },
       });
+      return;
+    }
+    case "products/create":
+    case "products/update": {
+      const p = payload as unknown as ShopifyProduct;
+      if (!p.variants?.length) return;
+      const mapping = (store.metafieldMapping ?? null) as MetafieldMapping | null;
+      // Native-field mapping only here (product_type/tags from the payload); full
+      // metafield resolution happens on the next backfill/sync.
+      const meta = resolveProductMetadata(mapping, { product_type: p.product_type, tags: p.tags });
+      for (const v of p.variants) {
+        const title = p.title + (v.title && v.title !== "Default Title" ? ` — ${v.title}` : "");
+        const fields = {
+          title, sku: v.sku || null, price: Number(v.price) || 0,
+          inventoryQty: v.inventory_quantity ?? 0, status: p.status, ...meta,
+        };
+        await prisma.product.upsert({
+          where: { id: String(v.id) },
+          create: { id: String(v.id), storeId: store.id, productId: String(p.id), ...fields },
+          update: fields,
+        });
+      }
       return;
     }
 
@@ -494,6 +580,7 @@ export async function handleWebhook(
         prisma.scoreHistory.deleteMany({ where }),
         prisma.action.deleteMany({ where }),
         prisma.suppression.deleteMany({ where }),
+        prisma.orderLineItem.deleteMany({ where }),
         prisma.order.deleteMany({ where }),
         prisma.customer.deleteMany({ where: { id: customerId, storeId: store.id } }),
       ]);
@@ -512,6 +599,7 @@ export async function handleWebhook(
         prisma.segmentSnapshot.deleteMany({ where: { storeId: sid } }),
         prisma.action.deleteMany({ where: { storeId: sid } }),
         prisma.suppression.deleteMany({ where: { storeId: sid } }),
+        prisma.orderLineItem.deleteMany({ where: { storeId: sid } }),
         prisma.order.deleteMany({ where: { storeId: sid } }),
         prisma.customer.deleteMany({ where: { storeId: sid } }),
         prisma.product.deleteMany({ where: { storeId: sid } }),

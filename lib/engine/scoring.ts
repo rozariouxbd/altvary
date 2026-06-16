@@ -1,6 +1,7 @@
 import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { bulkSyncProfiles } from "../klaviyo";
+import { computeReplenishment } from "./exhaustion";
 
 const DAY = 86_400_000;
 
@@ -251,17 +252,46 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       },
     });
 
-    // Klaviyo reconciliation: push every customer's freshly-computed score/tier as
-    // a bulk import job. Only in auto mode (manual stores sync on demand). No-ops
-    // when Klaviyo isn't connected. Best-effort — a Klaviyo outage must never fail
-    // a scoring run.
+    // Volumetric exhaustion: soonest product-depletion per customer (line items ×
+    // product volume). Reset stale values, then write the freshly-computed ones via
+    // the same chunked bulk UPDATE. No-ops gracefully when products lack volume
+    // metadata. Read by R06, the dashboard, and the Klaviyo sync below.
+    const replen = await computeReplenishment(store.id);
+    await prisma.customer.updateMany({
+      where: { storeId: store.id, OR: [{ replenishDueAt: { not: null } }, { daysToDepletion: { not: null } }] },
+      data: { replenishDueAt: null, daysToDepletion: null },
+    });
+    const repEntries = [...replen.entries()];
+    for (let i = 0; i < repEntries.length; i += 1000) {
+      const chunk = repEntries.slice(i, i + 1000);
+      const tuples: string[] = [];
+      const vals: unknown[] = [];
+      chunk.forEach(([cid, r], j) => {
+        const b = j * 3;
+        tuples.push(`($${b + 1},$${b + 2},$${b + 3})`);
+        vals.push(cid, r.replenishDueAt, r.daysToDepletion);
+      });
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Customer" AS c SET "replenishDueAt" = v.due::timestamp, "daysToDepletion" = v.dtd::int
+         FROM (VALUES ${tuples.join(",")}) AS v(id, due, dtd) WHERE c.id = v.id`,
+        ...vals,
+      );
+    }
+
+    // Klaviyo reconciliation: push every customer's freshly-computed score/tier (+
+    // replenishment) as a bulk import job. Only in auto mode (manual stores sync on
+    // demand). No-ops when Klaviyo isn't connected. Best-effort — a Klaviyo outage
+    // must never fail a scoring run.
     if (store.klaviyoSyncMode === "auto") {
       const byId = new Map(customers.map((c) => [c.id, c]));
       await bulkSyncProfiles(
         store,
         scored.map((s) => {
           const c = byId.get(s.id)!;
-          return { email: c.email, rfmeScore: s.score, segment: s.segment, lastOrderAt: c.lastOrderAt };
+          return {
+            email: c.email, rfmeScore: s.score, segment: s.segment, lastOrderAt: c.lastOrderAt,
+            replenishDueAt: replen.get(s.id)?.replenishDueAt ?? null,
+          };
         })
       ).catch(() => {});
     }

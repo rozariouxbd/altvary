@@ -12,6 +12,10 @@ const BASE = "https://a.klaviyo.com/api";
 const PROP_SCORE = "altvary_rfme_score";
 const PROP_TIER = "altvary_lifecycle_tier";
 const PROP_LAST_ORDER = "altvary_last_order_at";
+const PROP_REPLENISH_DUE = "altvary_replenish_due";       // soonest product-depletion date
+const PROP_DAYS_TO_DEPLETION = "altvary_days_to_depletion"; // days until then (negative = overdue)
+
+const DAY = 86_400_000;
 
 /** Internal segment code → merchant-facing lifecycle label pushed to Klaviyo. */
 const TIER_LABELS: Record<string, string> = {
@@ -85,12 +89,18 @@ export async function verifyKey(rawKey: string): Promise<boolean> {
 
 // ── Property mapping ───────────────────────────────────────────────────────────
 
-function fullScoreProps(c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt">): Record<string, unknown> {
+function fullScoreProps(
+  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt">,
+): Record<string, unknown> {
   const props: Record<string, unknown> = {};
   if (c.rfmeScore != null) props[PROP_SCORE] = Math.round(c.rfmeScore);
   const tier = tierLabel(c.segment);
   if (tier) props[PROP_TIER] = tier;
   if (c.lastOrderAt) props[PROP_LAST_ORDER] = c.lastOrderAt.toISOString();
+  if (c.replenishDueAt) {
+    props[PROP_REPLENISH_DUE] = c.replenishDueAt.toISOString();
+    props[PROP_DAYS_TO_DEPLETION] = Math.round((c.replenishDueAt.getTime() - Date.now()) / DAY);
+  }
   return props;
 }
 
@@ -127,7 +137,8 @@ async function upsertProfile(key: string, email: string, props: Record<string, u
 export async function syncOrderFreshness(
   store: Pick<Store, "klaviyoApiKey" | "klaviyoSyncMode">,
   customer: Pick<Customer, "email" | "segment">,
-  orderedAt: Date
+  orderedAt: Date,
+  replenishDueAt?: Date | null,
 ): Promise<void> {
   // Real-time push only fires in auto mode; manual stores sync on demand only.
   if (store.klaviyoSyncMode !== "auto") return;
@@ -135,6 +146,11 @@ export async function syncOrderFreshness(
   if (!key || !customer.email) return;
   const props: Record<string, unknown> = { [PROP_LAST_ORDER]: orderedAt.toISOString() };
   if (customer.segment && LAPSED.has(customer.segment)) props[PROP_TIER] = TIER_LABELS.returning;
+  // A fresh order of a product resets its depletion clock — push the new due date.
+  if (replenishDueAt) {
+    props[PROP_REPLENISH_DUE] = replenishDueAt.toISOString();
+    props[PROP_DAYS_TO_DEPLETION] = Math.round((replenishDueAt.getTime() - Date.now()) / DAY);
+  }
   await upsertProfile(key, customer.email, props);
 }
 
@@ -142,12 +158,15 @@ export async function syncOrderFreshness(
 export async function redactProfile(store: Pick<Store, "klaviyoApiKey">, email: string): Promise<void> {
   const key = getKlaviyoKey(store);
   if (!key || !email) return;
-  await upsertProfile(key, email, { [PROP_SCORE]: null, [PROP_TIER]: null, [PROP_LAST_ORDER]: null });
+  await upsertProfile(key, email, {
+    [PROP_SCORE]: null, [PROP_TIER]: null, [PROP_LAST_ORDER]: null,
+    [PROP_REPLENISH_DUE]: null, [PROP_DAYS_TO_DEPLETION]: null,
+  });
 }
 
 // ── Bulk reconciliation (the nightly path) ────────────────────────────────────
 
-type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt">;
+type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt">;
 
 /** Klaviyo's bulk import job accepts up to 10,000 profiles per request. */
 const BULK_LIMIT = 10_000;
@@ -202,7 +221,7 @@ export async function bulkSyncProfiles(store: Store, customers: SyncableCustomer
 export async function syncStoreNow(store: Store): Promise<number> {
   const customers = await prisma.customer.findMany({
     where: { storeId: store.id },
-    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true },
+    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true },
   });
   return bulkSyncProfiles(store, customers);
 }

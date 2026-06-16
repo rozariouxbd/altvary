@@ -25,6 +25,9 @@ model Store {
   klaviyoApiKey   String?
   klaviyoSyncedAt DateTime?
   klaviyoSyncMode String        @default("auto")
+  // Maps Altvary skincare fields → the merchant's Shopify metafield keys (set via the
+  // Day-1 Mapping Wizard), e.g. {"volume":"custom.volume_ml","category":"shopify.product_type"}.
+  metafieldMapping Json?
   trialEndsAt     DateTime
   scoringSchedule String        @default("0 2 * * *")
   createdAt       DateTime      @default(now())
@@ -97,6 +100,8 @@ model Membership {
 }
 
 // One row per Shopify product variant — current stock + price for inventory signals.
+// Skincare metadata (volumeMl…routineStep) is populated from Shopify metafields via the
+// merchant's Store.metafieldMapping; all nullable so the app degrades gracefully when absent.
 model Product {
   id           String  @id // shopify variant id
   storeId      String
@@ -106,7 +111,17 @@ model Product {
   price        Float   @default(0)
   inventoryQty Int     @default(0)
   status       String?
-  store        Store   @relation(fields: [storeId], references: [id])
+  // Skincare metadata (from metafield mapping)
+  volumeMl     Float?      // net contents, ml (drives exhaustion windows)
+  dailyUsageMl Float?      // est. usage/day; falls back to a category default in code
+  category     String?     // cleanser / serum / moisturizer / sunscreen / …
+  collection   String?     // routine/collection grouping
+  ingredients  String[]    // active ingredients / actives (for ingredient suppression — later)
+  paoDays      Int?        // Period After Opening, days (freshness — later)
+  cost         Float?      // unit cost (margin alerts — later)
+  marginPct    Float?      // derived margin % (later)
+  routineStep  Int?        // position in routine (routine-gap detection — later)
+  store        Store         @relation(fields: [storeId], references: [id])
 
   @@index([storeId])
 }
@@ -127,6 +142,10 @@ model Customer {
   rfmeScore   Float?
   segment     String?
   scoredAt    DateTime?
+  // Volumetric exhaustion: soonest product-depletion date across this customer's
+  // active products, and days until then. Computed in runScoring from line items.
+  replenishDueAt  DateTime?
+  daysToDepletion Int?
   store        Store          @relation(fields: [storeId], references: [id])
   orders       Order[]
   actions      Action[]
@@ -144,6 +163,29 @@ model Order {
   createdAt   DateTime
   store       Store    @relation(fields: [storeId], references: [id])
   customer    Customer @relation(fields: [customerId], references: [id])
+  lineItems   OrderLineItem[]
+}
+
+// One row per product variant per order — which products were in which order.
+// The keystone for skincare features (exhaustion, routine gaps, ingredient suppression…).
+model OrderLineItem {
+  id         String   @id @default(cuid())
+  storeId    String
+  orderId    String
+  customerId String   // denormalized from Order for fast per-customer × product grouping
+  productId  String   // shopify variant id (→ Product.id); may not exist as a Product row
+  title      String
+  quantity   Int      @default(1)
+  price      Float    @default(0)
+  lineTotal  Float    @default(0)
+  createdAt  DateTime // mirrors the order's createdAt for fast per-product recency
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // No enforced FK to Product: a line item can reference a variant we don't have a
+  // Product row for (deleted/never-synced). Joined to Product by productId in queries.
+
+  @@index([storeId, productId])
+  @@index([storeId, customerId])
+  @@index([orderId])
 }
 
 model ScoringRun {
