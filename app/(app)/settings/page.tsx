@@ -94,6 +94,7 @@ async function syncKlaviyoNow() {
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ notice?: string }> }) {
   const sp = await searchParams;
+  const skincareEnabled = process.env.SKINCARE_FEATURES_ENABLED === "true";
   const store = await getCurrentStore();
   const [lastRun, runCount, memberCount, scoringConfig] = store ? await Promise.all([
     prisma.scoringRun.findFirst({ where: { storeId: store.id, status: "complete" }, orderBy: { finishedAt: "desc" } }),
@@ -287,7 +288,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </div>
         </div>
 
-        {/* Product data mapping (skincare metafields) */}
+        {/* Product data mapping (skincare metafields) — gated until the vertical is rolled out */}
+        {skincareEnabled && (
         <div className="card" style={{ marginTop: 18 }}>
           <div className="card-head">
             <div><div className="card-title">Product data mapping</div><div className="card-sub">Point Altvary at your Shopify product fields (volume, category, ingredients…)</div></div>
@@ -300,6 +302,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <a href="/settings/mapping" className="btn btn-primary btn-sm" style={{ flexShrink: 0 }}><i className="ti ti-wand" /> Open mapping wizard</a>
           </div>
         </div>
+        )}
 
         <div className="note" style={{ marginTop: 18 }}>
           <i className="ti ti-shield-check"></i>

@@ -29,6 +29,8 @@ async function saveMapping(formData: FormData) {
 }
 
 export default async function MappingPage({ searchParams }: { searchParams: Promise<{ notice?: string }> }) {
+  // Skincare vertical is dark until rolled out — block direct access too.
+  if (process.env.SKINCARE_FEATURES_ENABLED !== "true") redirect("/settings");
   const sp = await searchParams;
   const store = await getCurrentStore();
   const mapping = (store?.metafieldMapping ?? {}) as MetafieldMapping;
