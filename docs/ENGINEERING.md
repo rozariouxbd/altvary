@@ -235,7 +235,7 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
-### 2026-06-15 — Skincare foundation + Volumetric Exhaustion (Phase 1) · `_______` (branch `skincare-mechanics`)
+### 2026-06-15 — Skincare foundation + Volumetric Exhaustion (Phase 1) · `1af7914` (branch `skincare-mechanics`)
 - **What.** First slice of the skincare roadmap. **Foundation:** `OrderLineItem` model (which products
   were in which order — the keystone) captured in backfill + `orders/*` webhook (+ GDPR redact);
   `Product` skincare metadata (`volumeMl`, `dailyUsageMl`, `category`, `ingredients`, `paoDays`, `cost`,
