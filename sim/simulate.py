@@ -243,7 +243,9 @@ def load_existing(shop: str, wipe: bool) -> None:
 
 
 def cleanup(shop: str) -> None:
-    """Remove ONLY simulated rows (id LIKE 'sim-%') from a store, restoring real data."""
+    """Remove simulated rows from a store, restoring real data. Matches both sim IDs
+    (id LIKE 'sim-%') AND the sim email marker (%@sim.example.com) — the latter catches
+    sim customers that entered with real Shopify numeric IDs (e.g. via a Shopify import)."""
     import psycopg2
     dsn = _dsn()
     if not dsn:
@@ -254,12 +256,18 @@ def cleanup(shop: str) -> None:
         if not row:
             raise SystemExit(f"store '{shop}' not found")
         sid = row[0]
+        # The full set of simulated customers (by id prefix OR sim email).
+        cust_pred = '("id" LIKE \'sim-%%\' OR email LIKE \'%%@sim.example.com\')'
+        sub = f'(SELECT id FROM "Customer" WHERE "storeId"=%s AND {cust_pred})'
         deleted = {}
-        for tbl, col in (("ScoreHistory", "customerId"), ("Action", "customerId"),
-                         ("Suppression", "customerId"), ("OrderLineItem", "id"),
-                         ("Order", "id"), ("Customer", "id"), ("Product", "id")):
-            cur.execute(f'DELETE FROM "{tbl}" WHERE "storeId"=%s AND "{col}" LIKE %s', (sid, "sim-%"))
+        for tbl in ("ScoreHistory", "Action", "Suppression", "OrderLineItem", "Order"):
+            cur.execute(f'DELETE FROM "{tbl}" WHERE "storeId"=%s AND "customerId" IN {sub}', (sid, sid))
             deleted[tbl] = cur.rowcount
+        # Sim products are id-prefixed only.
+        cur.execute('DELETE FROM "Product" WHERE "storeId"=%s AND id LIKE %s', (sid, "sim-%"))
+        deleted["Product"] = cur.rowcount
+        cur.execute(f'DELETE FROM "Customer" WHERE "storeId"=%s AND {cust_pred}', (sid,))
+        deleted["Customer"] = cur.rowcount
         conn.commit()
     print(f"[cleanup] '{shop}': removed {deleted}")
 
