@@ -235,7 +235,7 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
-### 2026-06-16 — Skincare Phase 2: Routine Gaps (R09) + Inventory-Aware R06 · `_______` (branch `skincare-phase2`)
+### 2026-06-16 — Skincare Phase 2: Routine Gaps (R09) + Inventory-Aware R06 · `1fec23f` (branch `skincare-phase2`)
 - **What.** Two more skincare plays on the existing foundation. **Routine Gaps (R09):**
   `computeRoutineGaps` (lib/engine/exhaustion.ts) finds the first missing core step
   (Cleanse→Treat→Hydrate→Protect) from a customer's line-item categories; persisted as
