@@ -235,6 +235,26 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-17 — Skincare Phase 4: "Glow Down" Margin Alert (R11) · branch `skincare-phase4`
+- **What.** Profitability mechanic completing the skincare moat. `computeMarginErosion`
+  (lib/engine/margin.ts) computes each customer's blended product margin % over the recent 90 days
+  vs their own prior baseline, from `OrderLineItem` × `Product.cost` (lineMargin$ = lineTotal −
+  cost·qty; lineTotal is the discounted price paid, so heavier discounting shows as lower margin).
+  Only customers with revenue in **both** windows get a `marginDropPct` (baseline − recent, pp).
+  Persisted as `Customer.recentMarginPct`/`marginDropPct` via the same chunked bulk UPDATE in
+  `runScoring`. New **R11** play (layer `ops`, watchlist like R04, no min-size gate) targets
+  `marginDropPct >= 10`; Klaviyo `altvary_margin_alert` (boolean) lets merchants route eroding
+  customers out of discount flows; R11 signal in the recommendations detail view. Gated behind
+  `SKINCARE_FEATURES_ENABLED`. No new UI/ingestion — `Product.cost`/`marginPct`, the `cost` mapping
+  slot, and `OrderLineItem` line totals already existed.
+- **Schema.** `Customer.recentMarginPct`/`marginDropPct` (Float) — migration `add_customer_margin`.
+- **Simulator.** Catalog products now carry `cost` (`price × (1 − MARGIN_BY_CAT)`); `--to-db` writes
+  `Product.cost`. Discounts were already modeled, so discount-chaser archetypes naturally erode.
+- **Verification.** `tsc` + `next build` clean. On the demo tenant (sim products patched with cost),
+  a real scoring run persisted margin for **1,848** customers → **R11 window 471** (max drop 74.5pp,
+  avg recent margin 57.7%); R06 (295) / R09 (1,560) / R10 (383) counts unchanged. Graceful no-op for
+  products without cost.
+
 ### 2026-06-17 — Skincare Phase 3: PAO Freshness (R10) + Ingredient Auto-Suppression · branch `skincare-phase3`
 - **What.** Two more skincare mechanics on the same foundation. **PAO Freshness (R10):**
   `computeFreshness` (lib/engine/exhaustion.ts) finds the soonest date an owned product passes its

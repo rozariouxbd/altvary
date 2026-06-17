@@ -49,6 +49,10 @@ function signalText(playId: string, c: Customer, s: CustomerSignal | undefined, 
       if (d == null) return "—";
       return d < 0 ? `expired ${-d}d` : d === 0 ? "expires today" : `${d}d to expiry`;
     }
+    case "R11":
+      return c.marginDropPct != null
+        ? `margin ↓${c.marginDropPct}pp${c.recentMarginPct != null ? ` (now ${c.recentMarginPct}%)` : ""}`
+        : "—";
     case "R07": return `1st order ${formatMoney(c.totalSpent, currency)}`;
     case "R08": return `${c.orderCount} orders · ${formatMoney(c.totalSpent, currency)} LTV`;
     default: return "—";

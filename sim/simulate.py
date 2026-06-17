@@ -215,12 +215,12 @@ def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP,
             return f"sim-{tag}-p-{sku}"
         prows = [(
             pid(p.sku), sid, pid(p.sku), p.title, p.sku, float(p.price), 100, "active",
-            float(p.volume_ml), p.category, int(p.pao_days), list(p.ingredients),
+            float(p.volume_ml), p.category, int(p.pao_days), list(p.ingredients), float(p.cost),
         ) for p in CATALOG]
         execute_values(cur,
-            'INSERT INTO "Product" (id,"storeId","productId",title,sku,price,"inventoryQty",status,"volumeMl",category,"paoDays",ingredients) '
+            'INSERT INTO "Product" (id,"storeId","productId",title,sku,price,"inventoryQty",status,"volumeMl",category,"paoDays",ingredients,cost) '
             'VALUES %s ON CONFLICT (id) DO UPDATE SET "volumeMl"=EXCLUDED."volumeMl", category=EXCLUDED.category, '
-            '"paoDays"=EXCLUDED."paoDays", ingredients=EXCLUDED.ingredients', prows)
+            '"paoDays"=EXCLUDED."paoDays", ingredients=EXCLUDED.ingredients, cost=EXCLUDED.cost', prows)
         # Order line items (one lead product per order) — feeds exhaustion windows.
         lirows = [(
             f"sim-{tag}-li-{o.order_id}", sid, nid(o.order_id), nid(o.customer_id), pid(o.sku),

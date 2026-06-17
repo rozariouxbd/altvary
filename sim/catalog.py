@@ -18,6 +18,7 @@ class Product:
     volume_ml: float = 0.0
     pao_days: int = 0
     ingredients: tuple[str, ...] = ()
+    cost: float = 0.0
     is_bundle: bool = False
 
 
@@ -33,6 +34,13 @@ VOLUME_BY_CAT = {
 PAO_BY_CAT = {
     "Cleanser": 365, "Serum": 180, "Moisturizer": 365, "Sunscreen": 365,
     "Mask": 365, "Toner": 365, "Eye Cream": 180, "Bundle": 365,
+}
+# Gross margin per category (fraction) — unit cost = price * (1 - margin). Drives the
+# margin-erosion play (R11): cheaper/discounted categories carry thinner margins, so a
+# customer's mix shift toward them shows up as eroding blended margin.
+MARGIN_BY_CAT = {
+    "Cleanser": 0.55, "Serum": 0.72, "Moisturizer": 0.62, "Sunscreen": 0.50,
+    "Mask": 0.45, "Toner": 0.48, "Eye Cream": 0.70, "Bundle": 0.40,
 }
 # Active ingredients keyed by the concern a product targets — drives ingredient
 # auto-suppression (a return citing irritation suppresses these actives).
@@ -67,15 +75,18 @@ def _catalog() -> list[Product]:
                     volume_ml=VOLUME_BY_CAT.get(cat, 50),
                     pao_days=PAO_BY_CAT.get(cat, 365),
                     ingredients=INGREDIENTS_BY_CONCERN.get(concern, ()),
+                    cost=round(price * (1 - MARGIN_BY_CAT.get(cat, 0.55)), 2),
                 ))
                 n += 1
     # A few bundles (higher price, "Skincare routine" kits).
     for i, concern in enumerate(["Acne", "Aging", "Dryness"]):
+        b_price = round(99 + i * 20, 2)
         items.append(Product(
             sku=f"BUNDLE-{i+1:02d}", title=f"{concern} Routine Bundle", brand=brands[i % len(brands)],
-            category="Bundle", skin_concern=concern, price=round(99 + i * 20, 2),
+            category="Bundle", skin_concern=concern, price=b_price,
             volume_ml=VOLUME_BY_CAT["Bundle"], pao_days=PAO_BY_CAT["Bundle"],
-            ingredients=INGREDIENTS_BY_CONCERN.get(concern, ()), is_bundle=True,
+            ingredients=INGREDIENTS_BY_CONCERN.get(concern, ()),
+            cost=round(b_price * (1 - MARGIN_BY_CAT["Bundle"]), 2), is_bundle=True,
         ))
     return items
 

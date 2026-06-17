@@ -157,6 +157,11 @@ model Customer {
   // window (last purchase + paoDays), and days until then. Computed in runScoring.
   freshnessDueAt  DateTime?
   daysToFreshness Int?
+  // Margin erosion ("Glow Down"): blended product margin % over the recent window, and the
+  // drop in percentage points vs this customer's own prior baseline (positive = eroding toward
+  // low-margin/discounted items). Needs Product.cost; computed in runScoring.
+  recentMarginPct Float?
+  marginDropPct   Float?
   store        Store          @relation(fields: [storeId], references: [id])
   orders       Order[]
   actions      Action[]
