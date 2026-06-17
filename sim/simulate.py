@@ -94,10 +94,14 @@ def _make_order(rng, cust: dict, when: datetime, oid: list[int]) -> dict:
     else:
         k = 1 + int(rng.random() < 0.4) + int(rng.random() < 0.15)
         items = [SINGLES[rng.integers(len(SINGLES))] for _ in range(k)]
-    gross = float(sum(i.price for i in items)) * float(p["aov"])
+    aov = float(p["aov"])
     disc_used = bool(rng.random() < p["disc"])
     pct = int(DISCOUNTS[rng.integers(len(DISCOUNTS))]) if disc_used else 0
-    net = round(gross * (1 - pct / 100.0), 2)
+    # Per-line net (discount applied per line) so a basket's products carry distinct margins —
+    # feeds real multi-product baskets (routine gaps, margin mix, ingredient suppression).
+    line_items = [[it.sku, 1, round(it.price * aov * (1 - pct / 100.0), 2)] for it in items]
+    gross = float(sum(i.price for i in items)) * aov
+    net = round(sum(li[2] for li in line_items), 2)  # order total = sum of line nets
     cancelled = bool(rng.random() < p["cancel"])
     refunded = bool((not cancelled) and rng.random() < p["refund"])
     lead = items[0]
@@ -111,6 +115,8 @@ def _make_order(rng, cust: dict, when: datetime, oid: list[int]) -> dict:
         "subscription": cust["subscription"],
         "gross_amount": round(gross, 2), "discount_used": disc_used, "discount_pct": pct,
         "amount": net, "refunded": refunded, "cancelled": cancelled,
+        # Full basket as JSON [[sku, qty, line_total], …]; write_db expands to OrderLineItem rows.
+        "items_json": json.dumps(line_items),
     }
 
 
@@ -155,9 +161,18 @@ def gen_campaigns(custs: list[dict], start: datetime, end: datetime, rng) -> pd.
 
 # --------------------------------------------------------------------------- DB
 def _dsn():
+    return _env("DIRECT_URL") or _env("DATABASE_URL")
+
+
+def _env(key: str):
+    """Read a key from the app's .env (+ .env.local override), same as Next loads."""
     from dotenv import dotenv_values
-    env = dotenv_values(HERE.parent / ".env")
-    return env.get("DIRECT_URL") or env.get("DATABASE_URL")
+    merged: dict = {}
+    for f in (".env", ".env.local"):
+        p = HERE.parent / f
+        if p.exists():
+            merged.update(dotenv_values(p))
+    return merged.get(key)
 
 
 def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP, wipe: bool = False) -> None:
@@ -221,12 +236,27 @@ def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP,
             'INSERT INTO "Product" (id,"storeId","productId",title,sku,price,"inventoryQty",status,"volumeMl",category,"paoDays",ingredients,cost,"skinConcern") '
             'VALUES %s ON CONFLICT (id) DO UPDATE SET "volumeMl"=EXCLUDED."volumeMl", category=EXCLUDED.category, '
             '"paoDays"=EXCLUDED."paoDays", ingredients=EXCLUDED.ingredients, cost=EXCLUDED.cost, "skinConcern"=EXCLUDED."skinConcern"', prows)
-        # Order line items (one lead product per order) — feeds exhaustion windows.
-        lirows = [(
-            f"sim-{tag}-li-{o.order_id}", sid, nid(o.order_id), nid(o.customer_id), pid(o.sku),
-            f"{o.skin_concern} {o.category}", 1, float(o.amount), float(o.amount),
-            o.created_at.to_pydatetime() if hasattr(o.created_at, "to_pydatetime") else o.created_at,
-        ) for o in live.itertuples()]
+        # Order line items — one row per basket item (items_json), so multi-product baskets feed
+        # exhaustion / routine gaps / margin / suppression. Falls back to the lead sku for old
+        # exports without items_json.
+        cat_by_sku = {p.sku: p for p in CATALOG}
+        lirows = []
+        for o in live.itertuples():
+            raw = getattr(o, "items_json", None)
+            try:
+                basket = json.loads(raw) if isinstance(raw, str) and raw else None
+            except Exception:
+                basket = None
+            if not basket:
+                basket = [[o.sku, 1, float(o.amount)]]
+            created = o.created_at.to_pydatetime() if hasattr(o.created_at, "to_pydatetime") else o.created_at
+            for idx, (sku, qty, line_total) in enumerate(basket):
+                prod = cat_by_sku.get(sku)
+                title = f"{prod.skin_concern} {prod.category}" if prod else str(sku)
+                lirows.append((
+                    f"sim-{tag}-li-{o.order_id}-{idx}", sid, nid(o.order_id), nid(o.customer_id), pid(sku),
+                    title, int(qty), float(line_total), float(line_total), created,
+                ))
         execute_values(cur,
             'INSERT INTO "OrderLineItem" (id,"storeId","orderId","customerId","productId",title,quantity,price,"lineTotal","createdAt") '
             'VALUES %s ON CONFLICT (id) DO NOTHING', lirows)
@@ -271,6 +301,81 @@ def cleanup(shop: str) -> None:
         deleted["Customer"] = cur.rowcount
         conn.commit()
     print(f"[cleanup] '{shop}': removed {deleted}")
+
+
+# ----------------------------------------------------------------- refund webhooks
+# Notes that match the app's IRRITATION_RE (lib/shopify.ts) so the refund drives
+# ingredient auto-suppression rather than being treated as a plain return.
+_IRRITATION_NOTES = [
+    "Customer reported irritation and redness after use",
+    "Return: allergic reaction / breakout",
+    "Skin started stinging and burning after applying",
+    "Caused a rash — requesting a refund",
+    "Sensitivity reaction, very itchy and red",
+]
+
+
+def drive_refunds(shop: str, url: str, count: int, dry_run: bool) -> None:
+    """Exercise the ingredient-suppression path end-to-end: pick sim line items on products that
+    carry actives, then POST signed `refunds/create` webhooks (with an irritation note) to the app
+    — the same path Shopify uses. Verifies HMAC + handler + CustomerIngredientSuppression + Klaviyo.
+    """
+    import hmac, hashlib, base64, urllib.request, urllib.error, psycopg2
+    secret = _env("SHOPIFY_WEBHOOK_SECRET")
+    if not secret:
+        raise SystemExit("No SHOPIFY_WEBHOOK_SECRET in ../.env — needed to sign webhooks")
+    dsn = _dsn()
+    if not dsn:
+        raise SystemExit("No DIRECT_URL/DATABASE_URL in ../.env")
+    # Pick refund targets: sim line items whose product has ingredients (so suppression yields actives).
+    with psycopg2.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute('SELECT id FROM "Store" WHERE "shopDomain"=%s', (shop,))
+        row = cur.fetchone()
+        if not row:
+            raise SystemExit(f"store '{shop}' not found")
+        sid = row[0]
+        cur.execute(
+            'SELECT li."orderId", li."productId" '
+            'FROM "OrderLineItem" li JOIN "Product" p ON p.id=li."productId" AND p."storeId"=li."storeId" '
+            'WHERE li."storeId"=%s AND li."orderId" LIKE \'sim-%%\' AND array_length(p.ingredients,1) > 0 '
+            'ORDER BY random() LIMIT %s', (sid, count))
+        targets = cur.fetchall()
+    if not targets:
+        raise SystemExit("no sim line items with ingredients found — load sim data first")
+    endpoint = url.rstrip("/") + "/api/webhooks"
+    rng = np.random.default_rng()
+    ok = bad = 0
+    for i, (order_id, product_id) in enumerate(targets):
+        note = _IRRITATION_NOTES[int(rng.integers(len(_IRRITATION_NOTES)))]
+        payload = {
+            "id": 9_000_000 + i,
+            "order_id": order_id,
+            "note": note,
+            "refund_line_items": [{"line_item": {"variant_id": product_id, "product_id": product_id}}],
+        }
+        raw = json.dumps(payload)
+        sig = base64.b64encode(hmac.new(secret.encode(), raw.encode(), hashlib.sha256).digest()).decode()
+        if dry_run:
+            print(f"[dry-run] {order_id} ← {note!r}")
+            continue
+        req = urllib.request.Request(endpoint, data=raw.encode(), method="POST", headers={
+            "content-type": "application/json",
+            "x-shopify-topic": "refunds/create",
+            "x-shopify-shop-domain": shop,
+            "x-shopify-hmac-sha256": sig,
+        })
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                ok += 1 if resp.status == 200 else 0
+                bad += 0 if resp.status == 200 else 1
+        except urllib.error.HTTPError as e:
+            bad += 1
+            print(f"  ! {order_id}: HTTP {e.code}")
+        except Exception as e:
+            bad += 1
+            print(f"  ! {order_id}: {e}")
+    print(f"[refunds] '{shop}': posted {len(targets)} refund webhooks → {ok} ok, {bad} failed"
+          + (" (dry-run)" if dry_run else f". Run scoring or check CustomerIngredientSuppression."))
 
 
 # --------------------------------------------------------------------------- modes
@@ -359,6 +464,11 @@ def main() -> None:
     l.add_argument("--shop", required=True); l.add_argument("--wipe", action="store_true")
     cl = sub.add_parser("cleanup", help="remove only sim-* rows from a store")
     cl.add_argument("--shop", required=True)
+    rf = sub.add_parser("refunds", help="drive irritation refunds/create webhooks (ingredient suppression)")
+    rf.add_argument("--shop", required=True)
+    rf.add_argument("--url", default="http://localhost:3000", help="app base URL (default localhost:3000)")
+    rf.add_argument("--count", type=int, default=30)
+    rf.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     if a.mode == "backfill":
         run_backfill(a.months, a.to_db)
@@ -368,6 +478,8 @@ def main() -> None:
         load_existing(a.shop, a.wipe)
     elif a.mode == "cleanup":
         cleanup(a.shop)
+    elif a.mode == "refunds":
+        drive_refunds(a.shop, a.url, a.count, a.dry_run)
 
 
 if __name__ == "__main__":
