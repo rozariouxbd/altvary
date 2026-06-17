@@ -47,9 +47,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", fontFamily: "var(--sans)" }}>
       <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "40px", width: "100%", maxWidth: 380, boxShadow: "var(--shadow-lift)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28 }}>
-          <span style={{ width: 36, height: 36, borderRadius: 10, background: "var(--ink)", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 16 }}>A</span>
-          <span style={{ fontWeight: 700, fontSize: 16, letterSpacing: "-.01em" }}>Alt<b>vary</b></span>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 28 }}>
+          <img src="/brand/Altvary.png" alt="Altvary" style={{ height: 30, width: "auto" }} />
         </div>
         <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-.02em", margin: "0 0 6px" }}>Sign in</h1>
         <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 24px" }}>Enter your email and password to continue.</p>

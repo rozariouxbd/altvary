@@ -39,7 +39,7 @@ export default function Sidebar({ customerCount, playCount, storeName, trialDays
   return (
     <aside className="side">
       <div className="brand">
-        <span className="brand-mark">A</span>
+        <span className="brand-mark"><img src="/brand/Altvary_Icon_white.png" alt="" width={20} height={20} /></span>
         <div className="brand-text">
           <span className="brand-name">Alt<b>vary</b></span>
           <span className="brand-store">{storeName}</span>

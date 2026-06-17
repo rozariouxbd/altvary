@@ -37,9 +37,8 @@ export default function ConnectPage() {
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg)" }}>
       <div style={{ width: "100%", maxWidth: 440, padding: "0 20px" }}>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 36 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 10, background: "var(--ink)", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 16, letterSpacing: "-.02em" }}>A</div>
-          <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-.02em" }}>Alt<b>vary</b></div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 36 }}>
+          <img src="/brand/Altvary.png" alt="Altvary" style={{ height: 30, width: "auto" }} />
         </div>
 
         <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r)", overflow: "hidden" }}>
@@ -47,7 +46,9 @@ export default function ConnectPage() {
           {/* Hero */}
           <div style={{ background: "linear-gradient(135deg,#0a0a0a 0%,#1a1a2e 100%)", padding: "36px 32px 32px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ width: 48, height: 48, borderRadius: 14, background: "#fff", color: "#0a0a0a", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 22, letterSpacing: "-.04em" }}>A</div>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: "#fff", display: "grid", placeItems: "center" }}>
+                <img src="/brand/Altvary_Icon.png" alt="Altvary" width={30} height={30} />
+              </div>
               <div style={{ color: "rgba(255,255,255,.35)", fontSize: 20, fontWeight: 300, lineHeight: 1 }}>+</div>
               <div style={{ width: 48, height: 48, borderRadius: 14, background: "#fff", display: "grid", placeItems: "center" }}>
                 <img src="/shopify_icon.svg" alt="Shopify" width={30} height={30} />
