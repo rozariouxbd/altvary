@@ -235,6 +235,34 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-17 — Recommendation conflict arbitration: Waterfall Priority + `altvary_active_play` · branch `conflict-arbitration`
+- **Why.** Each skincare mechanic was independent — `runScoring` persisted every qualifying field and
+  `fullScoreProps` pushed *all* matching `altvary_*` props at once, so one customer could fire
+  contradictory signals (just bought retinol → R12 "soothe/hold" **and** routine gap → R09 "sell an
+  acid"; or a replenishment nudge for a product they returned for irritation). Klaviyo then entered
+  the profile into competing flows. Biggest operational risk as the play set grows.
+- **What.** A deterministic Waterfall Priority resolver (`lib/engine/priority.ts`, `resolveActivePlay`)
+  picks ONE winner per customer: **Safety** (recent irritation return → `safety_irritation`; intro
+  window → R12) → **Brand protection** (household R13; margin R11) → **Commercial** (R06 → R10 → R09).
+  Persisted as `Customer.activePlay`, pushed as the single Klaviyo gate `altvary_active_play` (granular
+  props kept for in-flow personalization). Every skincare play's `segment` now pins `activePlay:"RXX"`
+  → strict one-play-per-customer across board, exports, and Klaviyo. R05 yields to safety plays.
+- **Safety specifics.** An irritation return locks the whole profile to safety mode for 21 days
+  (`Customer.safetyHoldUntil`, `computeSafetyHolds`), suppressing all commercial upsells. Precise
+  guard: `computeReplenishment`/`computeFreshness` now `NOT EXISTS` against the customer's
+  ingredient-suppression list, so a product they reacted to never drives a repurchase nudge even
+  though they still own it. Real-time: the order webhook re-arbitrates `activePlay`; the
+  refunds/create webhook sets `safety_irritation` + the 21-day hold immediately.
+- **Schema.** `Customer.activePlay` (text), `Customer.safetyHoldUntil` (timestamptz) — migration
+  `add_active_play_safety`. Written via the chunked bulk UPDATE in `runScoring`.
+- **Verification.** `tsc` + `next build` clean. On the demo tenant a real scoring run gave a clean
+  one-token distribution (R13 911 / R09 657 / R11 328 / R06 252 / R10 229 / R12 146) with **zero
+  waterfall violations** — the 26 customers qualifying for both R12 and R09 all resolved to R12; no
+  household/margin customer lost to a commercial play. A signed irritation refund flipped a live R10
+  customer to `safety_irritation` (suppressed Retinol+Peptides), the hold survived a full re-score,
+  and that product stopped driving the customer's freshness nudge (`freshnessDueAt` → null) despite
+  still being owned. Sim test rows cleaned up after.
+
 ### 2026-06-17 — Skincare Phase 6: Household profiling (R13) · branch `skincare-phase6`
 - **What.** Final mechanic completing the skincare moat. `computeHouseholds` (lib/engine/exhaustion.ts)
   flags accounts that bought **conflicting skin profiles** — a young pole (acne/oily…) AND a mature

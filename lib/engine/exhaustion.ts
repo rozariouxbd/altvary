@@ -52,6 +52,9 @@ export async function computeReplenishment(storeId: string): Promise<Map<string,
     FROM "OrderLineItem" li
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
     WHERE li."storeId" = ${storeId} AND p."volumeMl" IS NOT NULL AND p."volumeMl" > 0
+      AND NOT EXISTS (
+        SELECT 1 FROM "CustomerIngredientSuppression" s
+        WHERE s."customerId" = li."customerId" AND s.ingredient = ANY(p."ingredients"))
     GROUP BY li."customerId", li."productId", p."volumeMl", p."category", p."dailyUsageMl", p."inventoryQty"`;
   return reduceRows(rows);
 }
@@ -69,6 +72,9 @@ export async function computeReplenishmentForCustomer(
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
     WHERE li."storeId" = ${storeId} AND li."customerId" = ${customerId}
       AND p."volumeMl" IS NOT NULL AND p."volumeMl" > 0
+      AND NOT EXISTS (
+        SELECT 1 FROM "CustomerIngredientSuppression" s
+        WHERE s."customerId" = li."customerId" AND s.ingredient = ANY(p."ingredients"))
     GROUP BY li."customerId", li."productId", p."volumeMl", p."category", p."dailyUsageMl", p."inventoryQty"`;
   return reduceRows(rows).get(customerId) ?? null;
 }
@@ -98,6 +104,9 @@ export async function computeFreshness(storeId: string): Promise<Map<string, Fre
     FROM "OrderLineItem" li
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
     WHERE li."storeId" = ${storeId} AND p."paoDays" IS NOT NULL AND p."paoDays" > 0
+      AND NOT EXISTS (
+        SELECT 1 FROM "CustomerIngredientSuppression" s
+        WHERE s."customerId" = li."customerId" AND s.ingredient = ANY(p."ingredients"))
     GROUP BY li."customerId", li."productId", p."paoDays"`;
   const soonest = new Map<string, number>();
   for (const r of rows) {
@@ -200,4 +209,29 @@ export async function computeHouseholds(storeId: string): Promise<Set<string>> {
     if (isHouseholdConflict(concerns)) flagged.add(cid);
   }
   return flagged;
+}
+
+// ── Safety holds (post-irritation) ──────────────────────────────────────────
+
+/** Days a recent irritation return keeps the whole profile in safety mode (all upsells suppressed). */
+const SAFETY_HOLD_DAYS = 21;
+
+/**
+ * Customers in a post-irritation safety window: a CustomerIngredientSuppression created within the last
+ * 21 days. Maps each to the window's expiry. Tier-1 in the priority waterfall — overrides every
+ * commercial play. Empty when no recent irritation returns. See lib/engine/priority.ts.
+ */
+export async function computeSafetyHolds(storeId: string): Promise<Map<string, Date>> {
+  const rows = await prisma.$queryRaw<{ customerId: string; lastAt: Date }[]>`
+    SELECT "customerId" AS "customerId", MAX("createdAt") AS "lastAt"
+    FROM "CustomerIngredientSuppression"
+    WHERE "storeId" = ${storeId}
+    GROUP BY "customerId"`;
+  const now = Date.now();
+  const out = new Map<string, Date>();
+  for (const r of rows) {
+    const until = new Date(r.lastAt).getTime() + SAFETY_HOLD_DAYS * DAY;
+    if (until > now) out.set(r.customerId, new Date(until));
+  }
+  return out;
 }

@@ -18,10 +18,11 @@ export const R12: PlayDefinition = {
   layer: "engage",
   description: "Customers ramping onto a new aggressive active — hold hard upsells, onboard gently to avoid returns.",
 
-  // Only those still inside the hold window (evaluated at request time).
+  // Conflict-arbitrated (lib/engine/priority.ts): R12 is tier-1 safety, so it wins over all
+  // commercial plays but yields to an active post-irritation safety hold.
   segment: (store) => ({
     storeId: store.id,
-    introHoldUntil: { gt: new Date() },
+    activePlay: "R12",
   }),
 
   // Expected value = one average order protected (avoid an irritation return / churn).

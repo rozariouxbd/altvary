@@ -1,8 +1,9 @@
 import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { bulkSyncProfiles, reconcileIngredientSuppressions } from "../klaviyo";
-import { computeReplenishment, computeRoutineGaps, computeFreshness, computeSkinIntro, computeHouseholds } from "./exhaustion";
+import { computeReplenishment, computeRoutineGaps, computeFreshness, computeSkinIntro, computeHouseholds, computeSafetyHolds } from "./exhaustion";
 import { computeMarginErosion } from "./margin";
+import { resolveActivePlay } from "./priority";
 
 const DAY = 86_400_000;
 
@@ -257,13 +258,14 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
     // product volume). Reset stale values, then write the freshly-computed ones via
     // the same chunked bulk UPDATE. No-ops gracefully when products lack volume
     // metadata. Read by R06, the dashboard, and the Klaviyo sync below.
-    const [replen, routineGaps, freshness, margin, skinIntro, households] = await Promise.all([
+    const [replen, routineGaps, freshness, margin, skinIntro, households, safety] = await Promise.all([
       computeReplenishment(store.id),
       computeRoutineGaps(store.id),
       computeFreshness(store.id),
       computeMarginErosion(store.id),
       computeSkinIntro(store.id),
       computeHouseholds(store.id),
+      computeSafetyHolds(store.id),
     ]);
     // Reset stale skincare-derived fields, then write the freshly-computed ones.
     await prisma.customer.updateMany({
@@ -272,6 +274,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         replenishDueAt: null, daysToDepletion: null, replenishOos: false, routineGap: null,
         freshnessDueAt: null, daysToFreshness: null,
         recentMarginPct: null, marginDropPct: null, introHoldUntil: null, householdFlag: false,
+        activePlay: null, safetyHoldUntil: null,
       },
     });
     const repEntries = [...replen.entries()];
@@ -363,6 +366,57 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       });
     }
 
+    // Conflict arbitration: resolve each customer's single winning play (Waterfall Priority) from the
+    // freshly-computed signals, and persist it + the safety-hold expiry. The play segments + Klaviyo
+    // token (altvary_active_play) both key off this so a customer is in exactly one play everywhere.
+    const activePlay = new Map<string, string>();
+    for (const s of scored) {
+      const r = replen.get(s.id);
+      const f = freshness.get(s.id);
+      const won = resolveActivePlay({
+        safetyHold: safety.has(s.id),
+        introHoldActive: skinIntro.has(s.id),
+        householdFlag: households.has(s.id),
+        marginEroding: (margin.get(s.id)?.marginDropPct ?? 0) >= 10,
+        exhaustionDue: r != null && r.daysToDepletion >= -30 && r.daysToDepletion <= 7 && !r.oos,
+        freshnessDue: f != null && f.daysToFreshness >= -30 && f.daysToFreshness <= 14,
+        routineGap: routineGaps.has(s.id),
+      });
+      if (won) activePlay.set(s.id, won);
+    }
+    const apEntries = [...activePlay.entries()];
+    for (let i = 0; i < apEntries.length; i += 1000) {
+      const chunk = apEntries.slice(i, i + 1000);
+      const tuples: string[] = [];
+      const vals: unknown[] = [];
+      chunk.forEach(([cid, play], j) => {
+        const b = j * 2;
+        tuples.push(`($${b + 1},$${b + 2})`);
+        vals.push(cid, play);
+      });
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Customer" AS c SET "activePlay" = v.play
+         FROM (VALUES ${tuples.join(",")}) AS v(id, play) WHERE c.id = v.id`,
+        ...vals,
+      );
+    }
+    const safetyEntries = [...safety.entries()];
+    for (let i = 0; i < safetyEntries.length; i += 1000) {
+      const chunk = safetyEntries.slice(i, i + 1000);
+      const tuples: string[] = [];
+      const vals: unknown[] = [];
+      chunk.forEach(([cid, until], j) => {
+        const b = j * 2;
+        tuples.push(`($${b + 1},$${b + 2})`);
+        vals.push(cid, until);
+      });
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Customer" AS c SET "safetyHoldUntil" = v.until::timestamp
+         FROM (VALUES ${tuples.join(",")}) AS v(id, until) WHERE c.id = v.id`,
+        ...vals,
+      );
+    }
+
     // Klaviyo reconciliation: push every customer's freshly-computed score/tier (+
     // replenishment) as a bulk import job. Only in auto mode (manual stores sync on
     // demand). No-ops when Klaviyo isn't connected. Best-effort — a Klaviyo outage
@@ -382,6 +436,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
             marginDropPct: margin.get(s.id)?.marginDropPct ?? null,
             introHoldUntil: skinIntro.get(s.id) ?? null,
             householdFlag: households.has(s.id),
+            activePlay: activePlay.get(s.id) ?? null,
           };
         })
       ).catch(() => {});

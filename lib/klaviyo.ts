@@ -22,6 +22,7 @@ const PROP_SUPPRESS_INGREDIENTS = "altvary_suppress_ingredients"; // actives to 
 const PROP_MARGIN_ALERT = "altvary_margin_alert";         // margin eroding ≥ threshold (gate discount flows)
 const PROP_INTRO_HOLD = "altvary_intro_hold";             // in 21-day new-active intro window (delay aggressive flows)
 const PROP_HOUSEHOLD = "altvary_household";               // account spans conflicting skin profiles (split messaging)
+const PROP_ACTIVE_PLAY = "altvary_active_play";           // THE single arbitrated play — flows gate on this
 
 const DAY = 86_400_000;
 /** Margin-drop (percentage points) at or above which a customer is flagged margin-eroding. */
@@ -100,7 +101,7 @@ export async function verifyKey(rawKey: string): Promise<boolean> {
 // ── Property mapping ───────────────────────────────────────────────────────────
 
 function fullScoreProps(
-  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil" | "householdFlag">,
+  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil" | "householdFlag" | "activePlay">,
 ): Record<string, unknown> {
   const props: Record<string, unknown> = {};
   if (c.rfmeScore != null) props[PROP_SCORE] = Math.round(c.rfmeScore);
@@ -120,6 +121,7 @@ function fullScoreProps(
   if (c.marginDropPct != null) props[PROP_MARGIN_ALERT] = c.marginDropPct >= MARGIN_ALERT_PCT;
   if (c.introHoldUntil) props[PROP_INTRO_HOLD] = c.introHoldUntil.getTime() > Date.now();
   if (c.householdFlag) props[PROP_HOUSEHOLD] = true;
+  if (c.activePlay) props[PROP_ACTIVE_PLAY] = c.activePlay; // the mutual-exclusion gate for flows
   return props;
 }
 
@@ -189,6 +191,22 @@ export async function syncIngredientSuppression(
   await upsertProfile(key, email, { [PROP_SUPPRESS_INGREDIENTS]: ingredients });
 }
 
+/**
+ * Push a customer's single arbitrated play token real-time (the mutual-exclusion gate flows branch
+ * on). Pass null to clear it. Fired after an order resets a clock or a return triggers safety mode,
+ * so Klaviyo never holds a stale winner between nightly runs. Best-effort, auto mode only.
+ */
+export async function syncActivePlay(
+  store: Pick<Store, "klaviyoApiKey" | "klaviyoSyncMode">,
+  email: string,
+  activePlay: string | null,
+): Promise<void> {
+  if (store.klaviyoSyncMode !== "auto") return;
+  const key = getKlaviyoKey(store);
+  if (!key || !email) return;
+  await upsertProfile(key, email, { [PROP_ACTIVE_PLAY]: activePlay });
+}
+
 /** GDPR scrub: null out the altvary_* properties we appended to a profile. */
 export async function redactProfile(store: Pick<Store, "klaviyoApiKey">, email: string): Promise<void> {
   const key = getKlaviyoKey(store);
@@ -199,13 +217,13 @@ export async function redactProfile(store: Pick<Store, "klaviyoApiKey">, email: 
     [PROP_REPLENISH_OOS]: null, [PROP_ROUTINE_GAP]: null,
     [PROP_FRESHNESS_DUE]: null, [PROP_DAYS_TO_FRESHNESS]: null,
     [PROP_SUPPRESS_INGREDIENTS]: null, [PROP_MARGIN_ALERT]: null,
-    [PROP_INTRO_HOLD]: null, [PROP_HOUSEHOLD]: null,
+    [PROP_INTRO_HOLD]: null, [PROP_HOUSEHOLD]: null, [PROP_ACTIVE_PLAY]: null,
   });
 }
 
 // ── Bulk reconciliation (the nightly path) ────────────────────────────────────
 
-type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil" | "householdFlag">;
+type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil" | "householdFlag" | "activePlay">;
 
 /** Klaviyo's bulk import job accepts up to 10,000 profiles per request. */
 const BULK_LIMIT = 10_000;
@@ -286,7 +304,7 @@ export async function reconcileIngredientSuppressions(store: Store): Promise<voi
 export async function syncStoreNow(store: Store): Promise<number> {
   const customers = await prisma.customer.findMany({
     where: { storeId: store.id },
-    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true, replenishOos: true, routineGap: true, freshnessDueAt: true, marginDropPct: true, introHoldUntil: true, householdFlag: true },
+    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true, replenishOos: true, routineGap: true, freshnessDueAt: true, marginDropPct: true, introHoldUntil: true, householdFlag: true, activePlay: true },
   });
   const n = await bulkSyncProfiles(store, customers);
   await reconcileIngredientSuppressions(store).catch(() => {});

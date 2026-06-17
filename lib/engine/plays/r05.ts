@@ -1,5 +1,6 @@
 import type { PlayDefinition } from "../types";
 import { formatMoney } from "../../money";
+import { SAFETY_PLAYS } from "../priority";
 
 /**
  * R05 — Repurchase timing.
@@ -14,11 +15,13 @@ export const R05: PlayDefinition = {
   layer: "replenish",
   description: "Repeat customers entering their personal repurchase window — nudge them to reorder.",
 
-  // Base set: repeat buyers with enough history to have a cycle.
+  // Base set: repeat buyers with enough history to have a cycle. Conflict guard: never nudge a
+  // repurchase while a safety play is active (post-irritation or new-active intro window).
   segment: (store) => ({
     storeId: store.id,
     segment: { in: ["returning", "vip"] },
     orderCount: { gte: 2 },
+    NOT: { activePlay: { in: [...SAFETY_PLAYS] } },
   }),
 
   // Keep only those inside their personal window (per-customer cadence from order gaps).

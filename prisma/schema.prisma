@@ -171,6 +171,12 @@ model Customer {
   // AND mature anti-aging) → likely two people sharing one account, so single-profile recommendations
   // whipsaw. Computed in runScoring from line-item skinConcern; gates cross-sell + splits messaging.
   householdFlag   Boolean   @default(false)
+  // Conflict arbitration: the single winning play after the Waterfall Priority resolver
+  // (lib/engine/priority.ts) — e.g. "R12", "safety_irritation", or null. The master token flows
+  // gate on (pushed as altvary_active_play); guarantees one play per customer. safetyHoldUntil is
+  // the expiry of the post-irritation safety window that suppresses all commercial upsells.
+  activePlay      String?
+  safetyHoldUntil DateTime?
   store        Store          @relation(fields: [storeId], references: [id])
   orders       Order[]
   actions      Action[]

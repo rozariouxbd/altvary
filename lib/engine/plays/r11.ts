@@ -1,9 +1,6 @@
 import type { PlayDefinition } from "../types";
 import { formatMoney } from "../../money";
 
-/** A blended-margin fall of this many percentage points vs the customer's baseline is a real alert. */
-const DROP_THRESHOLD = 10;
-
 /**
  * R11 — Margin erosion ("Glow Down").
  * Customers whose blended product margin has eroded — recent orders skewing to low-margin /
@@ -19,9 +16,10 @@ export const R11: PlayDefinition = {
   layer: "ops",
   description: "Customers whose product margin is eroding toward low-margin, discounted items — protect profitability.",
 
+  // Conflict-arbitrated (lib/engine/priority.ts): R11 wins only when no safety play outranks it.
   segment: (store) => ({
     storeId: store.id,
-    marginDropPct: { gte: DROP_THRESHOLD },
+    activePlay: "R11",
   }),
 
   // Expected value = a slice of margin dollars at risk (also the ranking key).

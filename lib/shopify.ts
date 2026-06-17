@@ -3,7 +3,8 @@ import type { Store } from "@prisma/client";
 import { prisma } from "./prisma";
 import { encrypt, decrypt } from "./crypto";
 import { runScoring } from "./engine/scoring";
-import { syncOrderFreshness, redactProfile, syncIngredientSuppression } from "./klaviyo";
+import { syncOrderFreshness, redactProfile, syncIngredientSuppression, syncActivePlay } from "./klaviyo";
+import { resolveActivePlay } from "./engine/priority";
 import { resolveProductMetadata, mappingUsesMetafields, type MetafieldMapping } from "./skincare";
 import { computeReplenishmentForCustomer } from "./engine/exhaustion";
 
@@ -509,16 +510,38 @@ export async function handleWebhook(
       const replen = await computeReplenishmentForCustomer(store.id, customerId).catch(() => null);
       await prisma.customer.update({
         where: { id: customerId },
-        data: { replenishDueAt: replen?.replenishDueAt ?? null, daysToDepletion: replen?.daysToDepletion ?? null },
+        data: {
+          replenishDueAt: replen?.replenishDueAt ?? null, daysToDepletion: replen?.daysToDepletion ?? null,
+          replenishOos: replen?.oos ?? false,
+        },
       }).catch(() => {});
-      // Real-time Klaviyo freshness override: the customer just ordered, so push
-      // their new last-order date, lift them out of any lapsed tier, and refresh the
-      // replenishment date before a win-back flow can misfire. Non-fatal.
+      // Re-arbitrate this customer's single active play from their persisted signals + the fresh
+      // replenishment (the order may have moved them in/out of the R06 window). The nightly run is
+      // authoritative; this keeps the Klaviyo token from going stale between runs.
       const c = await prisma.customer.findUnique({
         where: { id: customerId },
-        select: { email: true, segment: true },
+        select: {
+          email: true, segment: true, routineGap: true, daysToFreshness: true,
+          marginDropPct: true, introHoldUntil: true, householdFlag: true, safetyHoldUntil: true,
+        },
       });
-      if (c) await syncOrderFreshness(store, c, new Date(o.created_at), replen?.replenishDueAt ?? null).catch(() => {});
+      if (c) {
+        const now = Date.now();
+        const won = resolveActivePlay({
+          safetyHold: !!c.safetyHoldUntil && c.safetyHoldUntil.getTime() > now,
+          introHoldActive: !!c.introHoldUntil && c.introHoldUntil.getTime() > now,
+          householdFlag: c.householdFlag,
+          marginEroding: (c.marginDropPct ?? 0) >= 10,
+          exhaustionDue: replen != null && replen.daysToDepletion >= -30 && replen.daysToDepletion <= 7 && !replen.oos,
+          freshnessDue: c.daysToFreshness != null && c.daysToFreshness >= -30 && c.daysToFreshness <= 14,
+          routineGap: c.routineGap != null,
+        });
+        await prisma.customer.update({ where: { id: customerId }, data: { activePlay: won } }).catch(() => {});
+        // Real-time Klaviyo override: push new last-order date + refreshed replenishment + the
+        // re-arbitrated play token before a win-back/upsell flow can misfire. Non-fatal.
+        await syncOrderFreshness(store, c, new Date(o.created_at), replen?.replenishDueAt ?? null).catch(() => {});
+        await syncActivePlay(store, c.email, won).catch(() => {});
+      }
       return;
     }
     case "customers/create":
@@ -590,7 +613,15 @@ export async function handleWebhook(
           }),
         ),
       );
-      // Push the customer's full suppression list so the merchant's flows hide those actives.
+      // Tier-1 safety: an irritation return locks the whole profile to safety mode for 21 days
+      // (suppress all commercial upsells) and makes safety_irritation the single active play.
+      const safetyUntil = new Date(Date.now() + 21 * 86_400_000);
+      await prisma.customer.update({
+        where: { id: order.customerId },
+        data: { safetyHoldUntil: safetyUntil, activePlay: "safety_irritation" },
+      }).catch(() => {});
+      // Push the customer's full suppression list + the safety token so flows hide those actives
+      // and exit any commercial flow immediately.
       const cust = await prisma.customer.findUnique({
         where: { id: order.customerId }, select: { email: true },
       });
@@ -599,8 +630,9 @@ export async function handleWebhook(
       });
       if (cust?.email) {
         await syncIngredientSuppression(store, cust.email, all.map((s) => s.ingredient)).catch(() => {});
+        await syncActivePlay(store, cust.email, "safety_irritation").catch(() => {});
       }
-      console.info("[skincare] ingredient suppression", { shop: store.shopDomain, customerId: order.customerId, ingredients });
+      console.info("[skincare] ingredient suppression + safety hold", { shop: store.shopDomain, customerId: order.customerId, ingredients });
       return;
     }
 

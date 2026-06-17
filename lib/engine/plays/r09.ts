@@ -18,10 +18,11 @@ export const R09: PlayDefinition = {
   layer: "engage",
   description: "Customers missing a step in their routine — cross-sell the product that completes it.",
 
+  // Conflict-arbitrated (lib/engine/priority.ts): R09 only wins when no safety/brand-protection play
+  // outranks it — so households + intro-hold + irritation customers are already excluded here.
   segment: (store) => ({
     storeId: store.id,
-    routineGap: { not: null },
-    householdFlag: false,
+    activePlay: "R09",
   }),
 
   // Expected value = one average order (the completing product).

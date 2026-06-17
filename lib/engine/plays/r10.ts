@@ -15,9 +15,10 @@ export const R10: PlayDefinition = {
   layer: "replenish",
   description: "Customers whose product is aging past its potency window — a fresh-batch nudge timed to shelf life.",
 
+  // Conflict-arbitrated (lib/engine/priority.ts): R10 wins only when no higher-priority play applies.
   segment: (store) => ({
     storeId: store.id,
-    daysToFreshness: { gte: -30, lte: 14 },
+    activePlay: "R10",
   }),
 
   // Expected value = one average order.

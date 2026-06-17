@@ -16,9 +16,11 @@ export const R13: PlayDefinition = {
   layer: "ops",
   description: "Accounts spanning conflicting skin profiles — likely shared. Split messaging instead of one-size recommendations.",
 
+  // Conflict-arbitrated (lib/engine/priority.ts): tier-2 brand protection — wins over commercial
+  // upsells but yields to safety (irritation / intro-hold).
   segment: (store) => ({
     storeId: store.id,
-    householdFlag: true,
+    activePlay: "R13",
   }),
 
   // Expected value = a slice of LTV protected by targeting the right person (also the rank key).
