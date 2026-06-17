@@ -47,7 +47,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", fontFamily: "var(--sans)" }}>
       <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "40px", width: "100%", maxWidth: 380, boxShadow: "var(--shadow-lift)" }}>
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 28 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 28 }}>
           <img src="/brand/Altvary.png" alt="Altvary" style={{ height: 30, width: "auto" }} />
         </div>
         <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-.02em", margin: "0 0 6px" }}>Sign in</h1>
