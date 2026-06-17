@@ -211,6 +211,60 @@ export async function computeHouseholds(storeId: string): Promise<Set<string>> {
   return flagged;
 }
 
+// ── Skin persona / regimen (Customers CRM grid) ─────────────────────────────
+
+export interface Regimen {
+  /** Dominant purchased skin concern, or "Mixed" for conflicting profiles. null when none mapped. */
+  skinProfile: string | null;
+  /** Distinct core routine steps the customer has ever bought (0–4). */
+  routineSteps: number;
+}
+
+/**
+ * Per-customer skin persona for the CRM directory: their most-frequent purchased skin concern
+ * ("Mixed" when they span conflicting profiles) and how many of the 4 core routine steps they've
+ * bought. Display-only, from the same line-item taxonomy the skincare plays use. Empty when no
+ * products carry a concern/category.
+ */
+export async function computeRegimen(storeId: string): Promise<Map<string, Regimen>> {
+  const rows = await prisma.$queryRaw<{ customerId: string; concern: string | null; category: string | null; n: bigint }[]>`
+    SELECT li."customerId" AS "customerId", p."skinConcern" AS "concern", p."category" AS "category",
+           count(*) AS "n"
+    FROM "OrderLineItem" li
+    JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
+    WHERE li."storeId" = ${storeId} AND (p."skinConcern" IS NOT NULL OR p."category" IS NOT NULL)
+    GROUP BY li."customerId", p."skinConcern", p."category"`;
+  // Tally concern frequency + the set of core steps per customer.
+  const concernCounts = new Map<string, Map<string, number>>();
+  const steps = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const n = Number(r.n);
+    if (r.concern) {
+      const m = concernCounts.get(r.customerId) ?? new Map<string, number>();
+      m.set(r.concern, (m.get(r.concern) ?? 0) + n);
+      concernCounts.set(r.customerId, m);
+    }
+    if (r.category && CORE_STEPS.includes(r.category)) {
+      const s = steps.get(r.customerId) ?? new Set<string>();
+      s.add(r.category);
+      steps.set(r.customerId, s);
+    }
+  }
+  const out = new Map<string, Regimen>();
+  const ids = new Set<string>([...concernCounts.keys(), ...steps.keys()]);
+  for (const cid of ids) {
+    const counts = concernCounts.get(cid);
+    let skinProfile: string | null = null;
+    if (counts) {
+      skinProfile = isHouseholdConflict(counts.keys())
+        ? "Mixed"
+        : [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    }
+    out.set(cid, { skinProfile, routineSteps: steps.get(cid)?.size ?? 0 });
+  }
+  return out;
+}
+
 // ── Safety holds (post-irritation) ──────────────────────────────────────────
 
 /** Days a recent irritation return keeps the whole profile in safety mode (all upsells suppressed). */

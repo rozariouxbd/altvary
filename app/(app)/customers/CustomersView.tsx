@@ -14,7 +14,15 @@ export interface CustomerRow {
   ltv: string;
   score: number | null; // null = not yet scored
   action: string;
+  skinProfile: string | null; // dominant concern or "Mixed"; null = no taxonomy data
+  routineSteps: number | null; // core steps logged (0–4); null = no taxonomy data
 }
+
+// Raw concern → merchant-facing skin-persona label for the CRM grid.
+const PROFILE_LABEL: Record<string, string> = {
+  Acne: "Acne-prone", Aging: "Mature", Dryness: "Dry", Pigmentation: "Pigmentation",
+  Sensitivity: "Sensitive", Redness: "Redness", Mixed: "Mixed profiles",
+};
 
 const SEG_TAG: Record<string, ReactElement> = {
   vip: <span className="tag pos">VIP</span>,
@@ -62,10 +70,11 @@ interface Props {
   minOrders: number;
   lastOrderDays: number;
   q: string;
+  skincareEnabled: boolean;
 }
 
 export default function CustomersView(props: Props) {
-  const { rows, counts, storeTotal, filteredTotal, page, pageSize, segment, sort, minOrders, lastOrderDays, q } = props;
+  const { rows, counts, storeTotal, filteredTotal, page, pageSize, segment, sort, minOrders, lastOrderDays, q, skincareEnabled } = props;
   const router = useRouter();
 
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -206,6 +215,7 @@ export default function CustomersView(props: Props) {
                 <tr>
                   <th>Customer</th>
                   <th className="hide-mobile">Segment</th>
+                  {skincareEnabled && <th className="hide-mobile">Skin profile</th>}
                   <th className="hide-tablet">Last order</th>
                   <th className="hide-mobile" style={{ textAlign: "right" }}>LTV</th>
                   <th>Score</th>
@@ -215,7 +225,7 @@ export default function CustomersView(props: Props) {
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={7}>
+                  <tr><td colSpan={skincareEnabled ? 8 : 7}>
                     <div className="empty-state"><i className="ti ti-users"></i><div className="es-t">No customers match these filters</div></div>
                   </td></tr>
                 ) : rows.map((c) => (
@@ -227,6 +237,26 @@ export default function CustomersView(props: Props) {
                       </div>
                     </td>
                     <td className="hide-mobile">{SEG_TAG[c.seg]}</td>
+                    {skincareEnabled && (
+                      <td className="hide-mobile">
+                        {c.skinProfile || c.routineSteps != null ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            {c.skinProfile && (
+                              <span className={`tag ${c.skinProfile === "Mixed" ? "warn" : "acc"}`}>
+                                {PROFILE_LABEL[c.skinProfile] ?? c.skinProfile}
+                              </span>
+                            )}
+                            {c.routineSteps != null && (
+                              <span className="tag" style={{ fontFamily: "var(--mono)" }} title="Core routine steps logged (Cleanser · Serum · Moisturizer · Sunscreen)">
+                                {c.routineSteps}/4
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                    )}
                     <td className="muted hide-tablet">{c.last}</td>
                     <td className="hide-mobile" style={{ textAlign: "right" }}><span className="num">{c.ltv}</span></td>
                     <td>

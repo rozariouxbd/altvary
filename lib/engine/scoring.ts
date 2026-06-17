@@ -1,7 +1,7 @@
 import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { bulkSyncProfiles, reconcileIngredientSuppressions } from "../klaviyo";
-import { computeReplenishment, computeRoutineGaps, computeFreshness, computeSkinIntro, computeHouseholds, computeSafetyHolds } from "./exhaustion";
+import { computeReplenishment, computeRoutineGaps, computeFreshness, computeSkinIntro, computeHouseholds, computeSafetyHolds, computeRegimen } from "./exhaustion";
 import { computeMarginErosion } from "./margin";
 import { resolveActivePlay } from "./priority";
 
@@ -258,7 +258,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
     // product volume). Reset stale values, then write the freshly-computed ones via
     // the same chunked bulk UPDATE. No-ops gracefully when products lack volume
     // metadata. Read by R06, the dashboard, and the Klaviyo sync below.
-    const [replen, routineGaps, freshness, margin, skinIntro, households, safety] = await Promise.all([
+    const [replen, routineGaps, freshness, margin, skinIntro, households, safety, regimen] = await Promise.all([
       computeReplenishment(store.id),
       computeRoutineGaps(store.id),
       computeFreshness(store.id),
@@ -266,6 +266,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       computeSkinIntro(store.id),
       computeHouseholds(store.id),
       computeSafetyHolds(store.id),
+      computeRegimen(store.id),
     ]);
     // Reset stale skincare-derived fields, then write the freshly-computed ones.
     await prisma.customer.updateMany({
@@ -274,7 +275,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         replenishDueAt: null, daysToDepletion: null, replenishOos: false, routineGap: null,
         freshnessDueAt: null, daysToFreshness: null,
         recentMarginPct: null, marginDropPct: null, introHoldUntil: null, householdFlag: false,
-        activePlay: null, safetyHoldUntil: null,
+        activePlay: null, safetyHoldUntil: null, skinProfile: null, routineSteps: null,
       },
     });
     const repEntries = [...replen.entries()];
@@ -413,6 +414,22 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       await prisma.$executeRawUnsafe(
         `UPDATE "Customer" AS c SET "safetyHoldUntil" = v.until::timestamp
          FROM (VALUES ${tuples.join(",")}) AS v(id, until) WHERE c.id = v.id`,
+        ...vals,
+      );
+    }
+    const regimenEntries = [...regimen.entries()];
+    for (let i = 0; i < regimenEntries.length; i += 1000) {
+      const chunk = regimenEntries.slice(i, i + 1000);
+      const tuples: string[] = [];
+      const vals: unknown[] = [];
+      chunk.forEach(([cid, r], j) => {
+        const b = j * 3;
+        tuples.push(`($${b + 1},$${b + 2},$${b + 3})`);
+        vals.push(cid, r.skinProfile, r.routineSteps);
+      });
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Customer" AS c SET "skinProfile" = v.profile, "routineSteps" = v.steps::int
+         FROM (VALUES ${tuples.join(",")}) AS v(id, profile, steps) WHERE c.id = v.id`,
         ...vals,
       );
     }

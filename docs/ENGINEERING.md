@@ -235,6 +235,21 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-17 — Customers CRM: "Skin profile" persona column · branch `skin-profile-column`
+- **Why.** Beauty operators want to see *what kind of skin* a customer has + *how complete their
+  regimen is*, not just an LTV/score — anchors the CRM to the skincare vertical.
+- **What.** `computeRegimen` (lib/engine/exhaustion.ts) derives each customer's dominant purchased
+  skin concern ("Mixed" when they span conflicting profiles, via `isHouseholdConflict`) and how many
+  of the 4 core routine steps they've bought (0–4), from the same line-item taxonomy the plays use.
+  Persisted as `Customer.skinProfile`/`routineSteps` (migration `add_customer_regimen`) via the
+  chunked bulk UPDATE in `runScoring`. The Customers grid renders a new **Skin profile** column —
+  a concern chip (mapped to merchant labels: Acne→"Acne-prone", Aging→"Mature", Dryness→"Dry"…) +
+  a mono "X/4" steps chip — gated behind `SKINCARE_FEATURES_ENABLED` so it's dark on non-skincare
+  stores and degrades to "—" when a customer has no taxonomy data.
+- **Verification.** `tsc` + `next build` clean. Real scoring run populated personas for ~4.3k buyers
+  (Mixed/Dryness/Sensitivity/Pigmentation/Acne/Aging with step counts 0–4); 10.5k non-skincare
+  buyers correctly null → "—". Grid is auth-gated so verified via SQL distribution + build.
+
 ### 2026-06-17 — Recommendation conflict arbitration: Waterfall Priority + `altvary_active_play` · branch `conflict-arbitration`
 - **Why.** Each skincare mechanic was independent — `runScoring` persisted every qualifying field and
   `fullScoreProps` pushed *all* matching `altvary_*` props at once, so one customer could fire

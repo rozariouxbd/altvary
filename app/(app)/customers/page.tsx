@@ -48,7 +48,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   if (!store) {
     return (
       <CustomersView rows={[]} counts={{}} storeTotal={0} filteredTotal={0}
-        page={1} pageSize={PAGE_SIZE} segment="all" sort="score" minOrders={0} lastOrderDays={0} q="" />
+        page={1} pageSize={PAGE_SIZE} segment="all" sort="score" minOrders={0} lastOrderDays={0} q="" skincareEnabled={false} />
     );
   }
 
@@ -106,6 +106,8 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       ltv: formatMoney(c.totalSpent ?? 0, currency),
       score: c.rfmeScore == null ? null : Math.round(c.rfmeScore),
       action: SEG_ACTION[seg] ?? "—",
+      skinProfile: c.skinProfile ?? null,
+      routineSteps: c.routineSteps ?? null,
     };
   });
 
@@ -122,6 +124,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       minOrders={minOrders}
       lastOrderDays={lastOrderDays}
       q={q}
+      skincareEnabled={process.env.SKINCARE_FEATURES_ENABLED === "true"}
     />
   );
 }
