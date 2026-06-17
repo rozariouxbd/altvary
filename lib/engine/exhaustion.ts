@@ -1,5 +1,5 @@
 import { prisma } from "../prisma";
-import { lifespanDays, hasStrongActive, INTRO_HOLD_DAYS } from "../skincare";
+import { lifespanDays, hasStrongActive, INTRO_HOLD_DAYS, isHouseholdConflict } from "../skincare";
 
 const DAY = 86_400_000;
 
@@ -174,4 +174,30 @@ export async function computeSkinIntro(storeId: string): Promise<Map<string, Dat
     if (until > now) out.set(cid, new Date(until)); // only while the hold is still active
   }
   return out;
+}
+
+// ── Household profiling ─────────────────────────────────────────────────────
+
+/**
+ * Customers whose purchases span conflicting skin profiles (e.g. teen-acne AND mature anti-aging),
+ * a strong signal of two people sharing one account. Returns the set of flagged customer ids.
+ * Empty when no products carry a skinConcern.
+ */
+export async function computeHouseholds(storeId: string): Promise<Set<string>> {
+  const rows = await prisma.$queryRaw<{ customerId: string; concern: string }[]>`
+    SELECT DISTINCT li."customerId" AS "customerId", p."skinConcern" AS "concern"
+    FROM "OrderLineItem" li
+    JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
+    WHERE li."storeId" = ${storeId} AND p."skinConcern" IS NOT NULL`;
+  const byCustomer = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const s = byCustomer.get(r.customerId) ?? new Set<string>();
+    s.add(r.concern);
+    byCustomer.set(r.customerId, s);
+  }
+  const flagged = new Set<string>();
+  for (const [cid, concerns] of byCustomer) {
+    if (isHouseholdConflict(concerns)) flagged.add(cid);
+  }
+  return flagged;
 }

@@ -117,6 +117,7 @@ model Product {
   dailyUsageMl Float?      // est. usage/day; falls back to a category default in code
   category     String?     // cleanser / serum / moisturizer / sunscreen / …
   collection   String?     // routine/collection grouping
+  skinConcern  String?     // skin profile this product targets (acne / aging / …) — household profiling
   ingredients  String[]    // active ingredients / actives (for ingredient suppression — later)
   paoDays      Int?        // Period After Opening, days (freshness — later)
   cost         Float?      // unit cost (margin alerts — later)
@@ -166,6 +167,10 @@ model Customer {
   // aggressive active (retinol/acids…), during which flows should delay further aggressive nudges to
   // cut irritation-driven returns. Set only while active (future); null otherwise. Computed in runScoring.
   introHoldUntil  DateTime?
+  // Household profiling: true when this account has bought conflicting skin profiles (e.g. teen-acne
+  // AND mature anti-aging) → likely two people sharing one account, so single-profile recommendations
+  // whipsaw. Computed in runScoring from line-item skinConcern; gates cross-sell + splits messaging.
+  householdFlag   Boolean   @default(false)
   store        Store          @relation(fields: [storeId], references: [id])
   orders       Order[]
   actions      Action[]

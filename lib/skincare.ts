@@ -9,6 +9,7 @@ export interface MetafieldMapping {
   dailyUsage?: string;  // e.g. "custom.daily_usage_ml"
   category?: string;    // e.g. "shopify.product_type" or "custom.category"
   collection?: string;
+  concern?: string;     // skin profile the product targets (acne / aging / …)
   ingredients?: string; // comma/semicolon-separated metafield
   pao?: string;         // Period After Opening (days)
   cost?: string;
@@ -28,6 +29,7 @@ export interface ResolvedProductMeta {
   dailyUsageMl?: number;
   category?: string;
   collection?: string;
+  skinConcern?: string;
   ingredients?: string[];
   paoDays?: number;
   cost?: number;
@@ -59,6 +61,7 @@ export function resolveProductMetadata(
     dailyUsageMl: num(resolveToken(mapping.dailyUsage, src)),
     category: resolveToken(mapping.category, src)?.trim() || undefined,
     collection: resolveToken(mapping.collection, src)?.trim() || undefined,
+    skinConcern: resolveToken(mapping.concern, src)?.trim() || undefined,
     ingredients: ing ? ing.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : undefined,
     paoDays: pao != null ? Math.round(pao) : undefined,
     cost: num(resolveToken(mapping.cost, src)),
@@ -124,4 +127,27 @@ export function hasStrongActive(ingredients: string[] | null | undefined): boole
     const s = ing.toLowerCase();
     return STRONG_ACTIVES.some((a) => s.includes(a));
   });
+}
+
+// ── Household profiling (conflicting skin profiles) ─────────────────────────────
+
+/**
+ * The two opposite life-stage skin profiles. An account buying from BOTH is the clearest signal of
+ * two different people sharing one login (a teen and a parent) — single-profile recommendations then
+ * whipsaw. Matched as case-insensitive substrings against each product's skinConcern.
+ */
+const YOUNG_SKIN_CONCERNS = ["acne", "oily", "blackhead", "breakout", "teen"];
+const MATURE_SKIN_CONCERNS = ["aging", "anti-aging", "antiaging", "wrinkle", "firmness", "mature"];
+
+/** True when a set of purchased skin concerns spans both the young and mature poles. */
+export function isHouseholdConflict(concerns: Iterable<string>): boolean {
+  let young = false;
+  let mature = false;
+  for (const c of concerns) {
+    const s = c.toLowerCase();
+    if (!young && YOUNG_SKIN_CONCERNS.some((k) => s.includes(k))) young = true;
+    if (!mature && MATURE_SKIN_CONCERNS.some((k) => s.includes(k))) mature = true;
+    if (young && mature) return true;
+  }
+  return false;
 }

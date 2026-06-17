@@ -235,6 +235,25 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-17 — Skincare Phase 6: Household profiling (R13) · branch `skincare-phase6`
+- **What.** Final mechanic completing the skincare moat. `computeHouseholds` (lib/engine/exhaustion.ts)
+  flags accounts that bought **conflicting skin profiles** — a young pole (acne/oily…) AND a mature
+  pole (aging/wrinkle…) — a strong signal of two people sharing one login, where single-profile
+  recommendations whipsaw. Cluster matching is case-insensitive substrings (`isHouseholdConflict` +
+  the YOUNG/MATURE concern sets in lib/skincare.ts) over a new `Product.skinConcern`. Persisted as
+  `Customer.householdFlag`. New **R13** play (layer `ops`, watchlist) lists flagged accounts for
+  split messaging; **R09 routine-gap cross-sell now excludes households** (a "missing step" inferred
+  from a two-person account is spurious); Klaviyo `altvary_household` (boolean) lets flows branch;
+  R13 signal in the recommendations detail view. Gated behind `SKINCARE_FEATURES_ENABLED`.
+- **Schema.** `Product.skinConcern` (text) + `Customer.householdFlag` (bool) — migration
+  `add_product_concern_household`. New `concern` slot in the metafield mapping + Mapping Wizard;
+  `resolveProductMetadata` resolves it (so backfill/products webhook populate it automatically).
+  householdFlag written via chunked `updateMany` in `runScoring`. Simulator writes `skinConcern`.
+- **Verification.** `tsc` + `next build` clean. On the demo tenant (sim products patched with
+  skinConcern), a real scoring run flagged **911** household accounts → **R13 911**, and **R09 fell
+  1,560 → 956** (604 routine-gap customers correctly excluded as households); R06 (295) / R10 (382) /
+  R11 (472) / R12 (147) unchanged. Graceful no-op for products without a concern.
+
 ### 2026-06-17 — Skincare Phase 5: Skin-Introduction 21-day hold (R12) · branch `skincare-phase5`
 - **What.** Irritation/return-reduction mechanic. `computeSkinIntro` (lib/engine/exhaustion.ts) finds
   each customer's FIRST purchase of an aggressive active (retinol/acids…) and holds for ~21 days

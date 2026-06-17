@@ -10,6 +10,7 @@ const FIELDS: { key: keyof MetafieldMapping; label: string; placeholder: string;
   { key: "dailyUsage", label: "Daily usage (optional)", placeholder: "custom.daily_usage_ml", hint: "Est. usage/day; otherwise a category default is used." },
   { key: "category", label: "Category", placeholder: "shopify.product_type", hint: "Use shopify.product_type, or a metafield like custom.category." },
   { key: "collection", label: "Collection / routine (optional)", placeholder: "custom.routine", hint: "Routine grouping — for routine-gap detection (later)." },
+  { key: "concern", label: "Skin concern (optional)", placeholder: "custom.skin_concern", hint: "Acne / aging / … — powers household profiling." },
   { key: "ingredients", label: "Active ingredients (optional)", placeholder: "custom.actives", hint: "Comma/semicolon-separated — for ingredient suppression (later)." },
   { key: "pao", label: "PAO days (optional)", placeholder: "custom.pao_days", hint: "Period After Opening — for freshness alerts (later)." },
   { key: "cost", label: "Unit cost (optional)", placeholder: "custom.unit_cost", hint: "For margin alerts (later)." },

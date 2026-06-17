@@ -7,6 +7,9 @@ import { formatMoney } from "../../money";
  * but never a moisturizer). The missing step is computed from their product history by
  * category — see lib/engine/exhaustion.ts `computeRoutineGaps` — and persisted on the
  * customer as `routineGap`. Cross-sell the exact product that completes their regimen.
+ *
+ * Excludes household accounts (`householdFlag`): a "missing step" inferred from a two-person
+ * account is spurious — the step may belong to the other person's routine.
  */
 export const R09: PlayDefinition = {
   id: "R09",
@@ -18,6 +21,7 @@ export const R09: PlayDefinition = {
   segment: (store) => ({
     storeId: store.id,
     routineGap: { not: null },
+    householdFlag: false,
   }),
 
   // Expected value = one average order (the completing product).
