@@ -3,7 +3,7 @@ import type { Store } from "@prisma/client";
 import { prisma } from "./prisma";
 import { encrypt, decrypt } from "./crypto";
 import { runScoring } from "./engine/scoring";
-import { syncOrderFreshness, redactProfile } from "./klaviyo";
+import { syncOrderFreshness, redactProfile, syncIngredientSuppression } from "./klaviyo";
 import { resolveProductMetadata, mappingUsesMetafields, type MetafieldMapping } from "./skincare";
 import { computeReplenishmentForCustomer } from "./engine/exhaustion";
 
@@ -204,7 +204,7 @@ async function registerWebhook(shop: string, token: string, topic: string): Prom
 export async function registerWebhooks(shop: string, token: string): Promise<void> {
   await Promise.all(
     ["orders/create", "orders/updated", "customers/create", "customers/update",
-     "products/create", "products/update"].map((t) =>
+     "products/create", "products/update", "refunds/create"].map((t) =>
       registerWebhook(shop, token, t).catch(() => {})
     )
   );
@@ -291,6 +291,21 @@ interface ShopifyOrder {
   source_name?: string | null;
   line_items?: ShopifyLineItem[];
 }
+
+/** A refunds/create payload (subset) — drives ingredient auto-suppression. */
+interface ShopifyRefund {
+  id: number;
+  order_id: number | null;
+  note: string | null;
+  refund_line_items?: { line_item?: { variant_id: number | null; product_id: number | null } | null }[];
+}
+
+/**
+ * Returns citing skin trouble are the signal for ingredient auto-suppression. We only act
+ * when the refund note mentions an adverse reaction — a plain "wrong size" return must not
+ * suppress an active. Kept deliberately narrow.
+ */
+const IRRITATION_RE = /irritat|reaction|allerg|breakout|break out|rash|burn|sting|itch|sensit|redness/i;
 
 /** Map Shopify's raw source_name to a friendly channel label. */
 function channelLabel(source: string | null | undefined): string {
@@ -544,6 +559,50 @@ export async function handleWebhook(
       }
       return;
     }
+    case "refunds/create": {
+      const r = payload as unknown as ShopifyRefund;
+      // Only returns whose note flags an adverse skin reaction drive suppression.
+      if (!IRRITATION_RE.test(r.note ?? "")) return;
+      const orderId = r.order_id != null ? String(r.order_id) : null;
+      if (!orderId) return;
+      const order = await prisma.order.findUnique({
+        where: { id: orderId }, select: { customerId: true, storeId: true },
+      });
+      if (!order || order.storeId !== store.id) return;
+      // Variant ids of the refunded items → their mapped active ingredients.
+      const variantIds = (r.refund_line_items ?? [])
+        .map((rli) => rli.line_item?.variant_id ?? rli.line_item?.product_id)
+        .filter((v): v is number => v != null)
+        .map(String);
+      if (variantIds.length === 0) return;
+      const products = await prisma.product.findMany({
+        where: { storeId: store.id, id: { in: variantIds } },
+        select: { ingredients: true },
+      });
+      const ingredients = [...new Set(products.flatMap((p) => p.ingredients))];
+      if (ingredients.length === 0) return;
+      await prisma.$transaction(
+        ingredients.map((ing) =>
+          prisma.customerIngredientSuppression.upsert({
+            where: { customerId_ingredient: { customerId: order.customerId, ingredient: ing } },
+            create: { storeId: store.id, customerId: order.customerId, ingredient: ing, reason: "return:irritation" },
+            update: {},
+          }),
+        ),
+      );
+      // Push the customer's full suppression list so the merchant's flows hide those actives.
+      const cust = await prisma.customer.findUnique({
+        where: { id: order.customerId }, select: { email: true },
+      });
+      const all = await prisma.customerIngredientSuppression.findMany({
+        where: { storeId: store.id, customerId: order.customerId }, select: { ingredient: true },
+      });
+      if (cust?.email) {
+        await syncIngredientSuppression(store, cust.email, all.map((s) => s.ingredient)).catch(() => {});
+      }
+      console.info("[skincare] ingredient suppression", { shop: store.shopDomain, customerId: order.customerId, ingredients });
+      return;
+    }
 
     // ── Mandatory GDPR / privacy webhooks ──────────────────────────────────
     // Shopify requires all three to be handled (App Store compliance check).
@@ -580,6 +639,7 @@ export async function handleWebhook(
         prisma.scoreHistory.deleteMany({ where }),
         prisma.action.deleteMany({ where }),
         prisma.suppression.deleteMany({ where }),
+        prisma.customerIngredientSuppression.deleteMany({ where }),
         prisma.orderLineItem.deleteMany({ where }),
         prisma.order.deleteMany({ where }),
         prisma.customer.deleteMany({ where: { id: customerId, storeId: store.id } }),
@@ -599,6 +659,7 @@ export async function handleWebhook(
         prisma.segmentSnapshot.deleteMany({ where: { storeId: sid } }),
         prisma.action.deleteMany({ where: { storeId: sid } }),
         prisma.suppression.deleteMany({ where: { storeId: sid } }),
+        prisma.customerIngredientSuppression.deleteMany({ where: { storeId: sid } }),
         prisma.orderLineItem.deleteMany({ where: { storeId: sid } }),
         prisma.order.deleteMany({ where: { storeId: sid } }),
         prisma.customer.deleteMany({ where: { storeId: sid } }),

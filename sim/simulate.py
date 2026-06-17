@@ -182,7 +182,7 @@ def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP,
         )
         sid = cur.fetchone()[0]
         if wipe:
-            for tbl in ("ScoreHistory", "Action", "Suppression", "OrderLineItem", "Order", "Customer", "Product"):
+            for tbl in ("ScoreHistory", "Action", "Suppression", "CustomerIngredientSuppression", "OrderLineItem", "Order", "Customer", "Product"):
                 cur.execute(f'DELETE FROM "{tbl}" WHERE "storeId"=%s', (sid,))
         # Namespace sim IDs per store — Customer.id/Order.id are GLOBAL primary keys, so the
         # same sim-c-* can't live in two tenants. Prefix keeps each store's rows unique while
@@ -215,11 +215,12 @@ def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP,
             return f"sim-{tag}-p-{sku}"
         prows = [(
             pid(p.sku), sid, pid(p.sku), p.title, p.sku, float(p.price), 100, "active",
-            float(p.volume_ml), p.category,
+            float(p.volume_ml), p.category, int(p.pao_days), list(p.ingredients),
         ) for p in CATALOG]
         execute_values(cur,
-            'INSERT INTO "Product" (id,"storeId","productId",title,sku,price,"inventoryQty",status,"volumeMl",category) '
-            'VALUES %s ON CONFLICT (id) DO UPDATE SET "volumeMl"=EXCLUDED."volumeMl", category=EXCLUDED.category', prows)
+            'INSERT INTO "Product" (id,"storeId","productId",title,sku,price,"inventoryQty",status,"volumeMl",category,"paoDays",ingredients) '
+            'VALUES %s ON CONFLICT (id) DO UPDATE SET "volumeMl"=EXCLUDED."volumeMl", category=EXCLUDED.category, '
+            '"paoDays"=EXCLUDED."paoDays", ingredients=EXCLUDED.ingredients', prows)
         # Order line items (one lead product per order) — feeds exhaustion windows.
         lirows = [(
             f"sim-{tag}-li-{o.order_id}", sid, nid(o.order_id), nid(o.customer_id), pid(o.sku),
@@ -260,7 +261,7 @@ def cleanup(shop: str) -> None:
         cust_pred = '("id" LIKE \'sim-%%\' OR email LIKE \'%%@sim.example.com\')'
         sub = f'(SELECT id FROM "Customer" WHERE "storeId"=%s AND {cust_pred})'
         deleted = {}
-        for tbl in ("ScoreHistory", "Action", "Suppression", "OrderLineItem", "Order"):
+        for tbl in ("ScoreHistory", "Action", "Suppression", "CustomerIngredientSuppression", "OrderLineItem", "Order"):
             cur.execute(f'DELETE FROM "{tbl}" WHERE "storeId"=%s AND "customerId" IN {sub}', (sid, sid))
             deleted[tbl] = cur.rowcount
         # Sim products are id-prefixed only.

@@ -44,6 +44,11 @@ function signalText(playId: string, c: Customer, s: CustomerSignal | undefined, 
       return d < 0 ? `overdue ${-d}d` : d === 0 ? "due today" : `${d}d left`;
     }
     case "R09": return c.routineGap ? `missing ${c.routineGap}` : "—";
+    case "R10": {
+      const d = c.daysToFreshness;
+      if (d == null) return "—";
+      return d < 0 ? `expired ${-d}d` : d === 0 ? "expires today" : `${d}d to expiry`;
+    }
     case "R07": return `1st order ${formatMoney(c.totalSpent, currency)}`;
     case "R08": return `${c.orderCount} orders · ${formatMoney(c.totalSpent, currency)} LTV`;
     default: return "—";

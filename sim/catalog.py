@@ -16,6 +16,8 @@ class Product:
     skin_concern: str
     price: float
     volume_ml: float = 0.0
+    pao_days: int = 0
+    ingredients: tuple[str, ...] = ()
     is_bundle: bool = False
 
 
@@ -26,6 +28,21 @@ SKIN_CONCERNS = ["Acne", "Aging", "Dryness", "Pigmentation", "Sensitivity", "Red
 VOLUME_BY_CAT = {
     "Cleanser": 150, "Serum": 30, "Moisturizer": 50, "Sunscreen": 50,
     "Mask": 100, "Toner": 200, "Eye Cream": 15, "Bundle": 250,
+}
+# Period-After-Opening (days) per category — drives the freshness/PAO play (R10).
+PAO_BY_CAT = {
+    "Cleanser": 365, "Serum": 180, "Moisturizer": 365, "Sunscreen": 365,
+    "Mask": 365, "Toner": 365, "Eye Cream": 180, "Bundle": 365,
+}
+# Active ingredients keyed by the concern a product targets — drives ingredient
+# auto-suppression (a return citing irritation suppresses these actives).
+INGREDIENTS_BY_CONCERN = {
+    "Acne": ("Salicylic Acid", "Benzoyl Peroxide"),
+    "Aging": ("Retinol", "Peptides"),
+    "Dryness": ("Hyaluronic Acid", "Ceramides"),
+    "Pigmentation": ("Vitamin C", "Niacinamide"),
+    "Sensitivity": ("Centella", "Panthenol"),
+    "Redness": ("Azelaic Acid", "Allantoin"),
 }
 
 
@@ -48,6 +65,8 @@ def _catalog() -> list[Product]:
                     sku=f"SKU-{n:03d}", title=f"{concern} {cat}", brand=brand,
                     category=cat, skin_concern=concern, price=price,
                     volume_ml=VOLUME_BY_CAT.get(cat, 50),
+                    pao_days=PAO_BY_CAT.get(cat, 365),
+                    ingredients=INGREDIENTS_BY_CONCERN.get(concern, ()),
                 ))
                 n += 1
     # A few bundles (higher price, "Skincare routine" kits).
@@ -55,7 +74,8 @@ def _catalog() -> list[Product]:
         items.append(Product(
             sku=f"BUNDLE-{i+1:02d}", title=f"{concern} Routine Bundle", brand=brands[i % len(brands)],
             category="Bundle", skin_concern=concern, price=round(99 + i * 20, 2),
-            volume_ml=VOLUME_BY_CAT["Bundle"], is_bundle=True,
+            volume_ml=VOLUME_BY_CAT["Bundle"], pao_days=PAO_BY_CAT["Bundle"],
+            ingredients=INGREDIENTS_BY_CONCERN.get(concern, ()), is_bundle=True,
         ))
     return items
 

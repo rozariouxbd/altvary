@@ -41,6 +41,7 @@ model Store {
   products        Product[]
   memberships     Membership[]
   segmentSnapshots SegmentSnapshot[]
+  ingredientSuppressions CustomerIngredientSuppression[]
   scoringConfig   ScoringConfig?
 }
 
@@ -152,11 +153,32 @@ model Customer {
   // Missing core routine step (e.g. "Moisturizer") for routine-gap cross-sell, or null
   // if the customer's routine is complete / too sparse to judge. Computed in runScoring.
   routineGap      String?
+  // PAO/freshness: soonest date an owned product passes its Period-After-Opening efficacy
+  // window (last purchase + paoDays), and days until then. Computed in runScoring.
+  freshnessDueAt  DateTime?
+  daysToFreshness Int?
   store        Store          @relation(fields: [storeId], references: [id])
   orders       Order[]
   actions      Action[]
   suppressions Suppression[]
   scoreHistory ScoreHistory[]
+  ingredientSuppressions CustomerIngredientSuppression[]
+}
+
+// Per-customer ingredient exclusions (e.g. after a return citing skin irritation). The
+// merchant's flows hide products containing these actives. See lib/shopify.ts refunds/create.
+model CustomerIngredientSuppression {
+  id         String   @id @default(cuid())
+  storeId    String
+  customerId String
+  ingredient String
+  reason     String
+  createdAt  DateTime @default(now())
+  store      Store    @relation(fields: [storeId], references: [id])
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([customerId, ingredient])
+  @@index([storeId, customerId])
 }
 
 model Order {

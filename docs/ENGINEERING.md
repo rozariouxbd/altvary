@@ -235,6 +235,31 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-17 — Skincare Phase 3: PAO Freshness (R10) + Ingredient Auto-Suppression · branch `skincare-phase3`
+- **What.** Two more skincare mechanics on the same foundation. **PAO Freshness (R10):**
+  `computeFreshness` (lib/engine/exhaustion.ts) finds the soonest date an owned product passes its
+  Period-After-Opening efficacy window (last purchase of that product + `Product.paoDays`) —
+  oxidation/shelf-life, distinct from volumetric depletion (R06). Persisted as
+  `Customer.freshnessDueAt`/`daysToFreshness`; new R10 play nudges a fresh-batch repurchase in the
+  −30d…+14d window; Klaviyo `altvary_freshness_due` (+ `altvary_days_to_freshness`).
+  **Ingredient Auto-Suppression:** new `refunds/create` webhook — when a refund note flags an
+  adverse skin reaction (`IRRITATION_RE`), the refunded products' `ingredients` are written to a new
+  `CustomerIngredientSuppression` table and the customer's full active list is pushed to Klaviyo
+  (`altvary_suppress_ingredients`) so the merchant's flows hide those actives. Reconciled nightly in
+  `runScoring` and on manual `Sync now` (`reconcileIngredientSuppressions`). Both gated behind
+  `SKINCARE_FEATURES_ENABLED`; R10 signal shown in the recommendations detail view.
+- **Schema.** `Customer.freshnessDueAt`/`daysToFreshness`; `CustomerIngredientSuppression`
+  (unique `[customerId, ingredient]`, index `[storeId, customerId]`, FKs to Store + Customer) —
+  migration `add_freshness_and_ingredient_suppression`. Freshness written via the same chunked bulk
+  UPDATE in `runScoring`. GDPR `customers/redact` + `shop/redact` extended to clear the new table.
+- **Simulator.** Catalog products now carry `pao_days` (per category) + `ingredients` (per concern);
+  `--to-db` writes `Product.paoDays`/`ingredients`; wipe + cleanup cover the new table.
+- **Verification.** `tsc` + `next build` clean. On the 14.8k-customer demo tenant (sim products
+  patched with PAO + actives), a real scoring run persisted `freshnessDueAt` for **4,322** customers
+  → R10 window **381**; R06 **298**, routine gaps **1,560** unaffected. Ingredient-suppression
+  model + reconcile-grouping query exercised against a real Acne buyer (insert → grouped-by-email
+  push shape → cleanup). R10 page is auth-gated (same machinery as the screenshot-verified R06/R09).
+
 ### 2026-06-16 — Skincare Phase 2: Routine Gaps (R09) + Inventory-Aware R06 · `1fec23f` (branch `skincare-phase2`)
 - **What.** Two more skincare plays on the existing foundation. **Routine Gaps (R09):**
   `computeRoutineGaps` (lib/engine/exhaustion.ts) finds the first missing core step

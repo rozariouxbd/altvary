@@ -16,6 +16,9 @@ const PROP_REPLENISH_DUE = "altvary_replenish_due";       // soonest product-dep
 const PROP_DAYS_TO_DEPLETION = "altvary_days_to_depletion"; // days until then (negative = overdue)
 const PROP_REPLENISH_OOS = "altvary_replenish_oos";       // soonest-depleting product is out of stock
 const PROP_ROUTINE_GAP = "altvary_routine_gap";           // missing core routine step (cross-sell)
+const PROP_FRESHNESS_DUE = "altvary_freshness_due";       // soonest PAO/efficacy-expiry date
+const PROP_DAYS_TO_FRESHNESS = "altvary_days_to_freshness"; // days until then (negative = past)
+const PROP_SUPPRESS_INGREDIENTS = "altvary_suppress_ingredients"; // actives to hide (returns citing irritation)
 
 const DAY = 86_400_000;
 
@@ -92,7 +95,7 @@ export async function verifyKey(rawKey: string): Promise<boolean> {
 // ── Property mapping ───────────────────────────────────────────────────────────
 
 function fullScoreProps(
-  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap">,
+  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt">,
 ): Record<string, unknown> {
   const props: Record<string, unknown> = {};
   if (c.rfmeScore != null) props[PROP_SCORE] = Math.round(c.rfmeScore);
@@ -105,6 +108,10 @@ function fullScoreProps(
     props[PROP_REPLENISH_OOS] = !!c.replenishOos; // flows hold the nudge when true
   }
   if (c.routineGap) props[PROP_ROUTINE_GAP] = c.routineGap;
+  if (c.freshnessDueAt) {
+    props[PROP_FRESHNESS_DUE] = c.freshnessDueAt.toISOString();
+    props[PROP_DAYS_TO_FRESHNESS] = Math.round((c.freshnessDueAt.getTime() - Date.now()) / DAY);
+  }
   return props;
 }
 
@@ -158,6 +165,22 @@ export async function syncOrderFreshness(
   await upsertProfile(key, customer.email, props);
 }
 
+/**
+ * Push a customer's full ingredient-suppression list to Klaviyo (the merchant's flows hide
+ * products containing these actives). Sends an empty array to clear when none remain. Fired
+ * real-time after a return citing irritation, and reconciled in the nightly run. Best-effort.
+ */
+export async function syncIngredientSuppression(
+  store: Pick<Store, "klaviyoApiKey" | "klaviyoSyncMode">,
+  email: string,
+  ingredients: string[],
+): Promise<void> {
+  if (store.klaviyoSyncMode !== "auto") return;
+  const key = getKlaviyoKey(store);
+  if (!key || !email) return;
+  await upsertProfile(key, email, { [PROP_SUPPRESS_INGREDIENTS]: ingredients });
+}
+
 /** GDPR scrub: null out the altvary_* properties we appended to a profile. */
 export async function redactProfile(store: Pick<Store, "klaviyoApiKey">, email: string): Promise<void> {
   const key = getKlaviyoKey(store);
@@ -166,12 +189,14 @@ export async function redactProfile(store: Pick<Store, "klaviyoApiKey">, email: 
     [PROP_SCORE]: null, [PROP_TIER]: null, [PROP_LAST_ORDER]: null,
     [PROP_REPLENISH_DUE]: null, [PROP_DAYS_TO_DEPLETION]: null,
     [PROP_REPLENISH_OOS]: null, [PROP_ROUTINE_GAP]: null,
+    [PROP_FRESHNESS_DUE]: null, [PROP_DAYS_TO_FRESHNESS]: null,
+    [PROP_SUPPRESS_INGREDIENTS]: null,
   });
 }
 
 // ── Bulk reconciliation (the nightly path) ────────────────────────────────────
 
-type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap">;
+type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt">;
 
 /** Klaviyo's bulk import job accepts up to 10,000 profiles per request. */
 const BULK_LIMIT = 10_000;
@@ -219,6 +244,32 @@ export async function bulkSyncProfiles(store: Store, customers: SyncableCustomer
 }
 
 /**
+ * Reconcile every customer's ingredient-suppression list to Klaviyo (the slow lane for the
+ * real-time refund push). Groups CustomerIngredientSuppression by customer and upserts the
+ * altvary_suppress_ingredients array per profile. Sparse by nature (only returns citing
+ * irritation create rows), so a per-profile loop is fine. Best-effort; no-op without a key.
+ */
+export async function reconcileIngredientSuppressions(store: Store): Promise<void> {
+  const key = getKlaviyoKey(store);
+  if (!key) return;
+  const rows = await prisma.customerIngredientSuppression.findMany({
+    where: { storeId: store.id },
+    select: { ingredient: true, customer: { select: { email: true } } },
+  });
+  const byEmail = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const email = r.customer.email;
+    if (!email) continue;
+    const s = byEmail.get(email) ?? new Set<string>();
+    s.add(r.ingredient);
+    byEmail.set(email, s);
+  }
+  for (const [email, ings] of byEmail) {
+    await upsertProfile(key, email, { [PROP_SUPPRESS_INGREDIENTS]: [...ings] });
+  }
+}
+
+/**
  * On-demand full push for a store — fetches its customers and bulk-syncs them.
  * Used by the manual "Sync to Klaviyo now" button; runs regardless of sync mode
  * (it's an explicit user action). No-ops if Klaviyo isn't connected.
@@ -226,7 +277,9 @@ export async function bulkSyncProfiles(store: Store, customers: SyncableCustomer
 export async function syncStoreNow(store: Store): Promise<number> {
   const customers = await prisma.customer.findMany({
     where: { storeId: store.id },
-    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true, replenishOos: true, routineGap: true },
+    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true, replenishOos: true, routineGap: true, freshnessDueAt: true },
   });
-  return bulkSyncProfiles(store, customers);
+  const n = await bulkSyncProfiles(store, customers);
+  await reconcileIngredientSuppressions(store).catch(() => {});
+  return n;
 }

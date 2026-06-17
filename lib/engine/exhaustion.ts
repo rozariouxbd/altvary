@@ -73,6 +73,46 @@ export async function computeReplenishmentForCustomer(
   return reduceRows(rows).get(customerId) ?? null;
 }
 
+// ── PAO / freshness ───────────────────────────────────────────────────────────
+
+interface FreshRow {
+  customerId: string;
+  lastAt: Date;
+  paoDays: number;
+}
+
+export interface Freshness {
+  freshnessDueAt: Date;
+  daysToFreshness: number;
+}
+
+/**
+ * Soonest date an owned product passes its Period-After-Opening efficacy window
+ * (last purchase of that product + paoDays), per customer. Distinct from volumetric
+ * exhaustion: this is oxidation/shelf-life, not how much is left. Products without a
+ * paoDays are ignored. Empty when none are mapped.
+ */
+export async function computeFreshness(storeId: string): Promise<Map<string, Freshness>> {
+  const rows = await prisma.$queryRaw<FreshRow[]>`
+    SELECT li."customerId" AS "customerId", MAX(li."createdAt") AS "lastAt", p."paoDays" AS "paoDays"
+    FROM "OrderLineItem" li
+    JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
+    WHERE li."storeId" = ${storeId} AND p."paoDays" IS NOT NULL AND p."paoDays" > 0
+    GROUP BY li."customerId", li."productId", p."paoDays"`;
+  const soonest = new Map<string, number>();
+  for (const r of rows) {
+    const ms = new Date(r.lastAt).getTime() + r.paoDays * DAY;
+    const cur = soonest.get(r.customerId);
+    if (cur == null || ms < cur) soonest.set(r.customerId, ms);
+  }
+  const now = Date.now();
+  const out = new Map<string, Freshness>();
+  for (const [cid, ms] of soonest) {
+    out.set(cid, { freshnessDueAt: new Date(ms), daysToFreshness: Math.round((ms - now) / DAY) });
+  }
+  return out;
+}
+
 // ── Routine gaps ────────────────────────────────────────────────────────────
 
 /** The canonical core routine, in order — a gap is the first of these a customer lacks. */

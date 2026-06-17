@@ -1,7 +1,7 @@
 import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
-import { bulkSyncProfiles } from "../klaviyo";
-import { computeReplenishment, computeRoutineGaps } from "./exhaustion";
+import { bulkSyncProfiles, reconcileIngredientSuppressions } from "../klaviyo";
+import { computeReplenishment, computeRoutineGaps, computeFreshness } from "./exhaustion";
 
 const DAY = 86_400_000;
 
@@ -256,14 +256,18 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
     // product volume). Reset stale values, then write the freshly-computed ones via
     // the same chunked bulk UPDATE. No-ops gracefully when products lack volume
     // metadata. Read by R06, the dashboard, and the Klaviyo sync below.
-    const [replen, routineGaps] = await Promise.all([
+    const [replen, routineGaps, freshness] = await Promise.all([
       computeReplenishment(store.id),
       computeRoutineGaps(store.id),
+      computeFreshness(store.id),
     ]);
     // Reset stale skincare-derived fields, then write the freshly-computed ones.
     await prisma.customer.updateMany({
       where: { storeId: store.id },
-      data: { replenishDueAt: null, daysToDepletion: null, replenishOos: false, routineGap: null },
+      data: {
+        replenishDueAt: null, daysToDepletion: null, replenishOos: false, routineGap: null,
+        freshnessDueAt: null, daysToFreshness: null,
+      },
     });
     const repEntries = [...replen.entries()];
     for (let i = 0; i < repEntries.length; i += 1000) {
@@ -298,6 +302,22 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         ...vals,
       );
     }
+    const freshEntries = [...freshness.entries()];
+    for (let i = 0; i < freshEntries.length; i += 1000) {
+      const chunk = freshEntries.slice(i, i + 1000);
+      const tuples: string[] = [];
+      const vals: unknown[] = [];
+      chunk.forEach(([cid, f], j) => {
+        const b = j * 3;
+        tuples.push(`($${b + 1},$${b + 2},$${b + 3})`);
+        vals.push(cid, f.freshnessDueAt, f.daysToFreshness);
+      });
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Customer" AS c SET "freshnessDueAt" = v.due::timestamp, "daysToFreshness" = v.dtf::int
+         FROM (VALUES ${tuples.join(",")}) AS v(id, due, dtf) WHERE c.id = v.id`,
+        ...vals,
+      );
+    }
 
     // Klaviyo reconciliation: push every customer's freshly-computed score/tier (+
     // replenishment) as a bulk import job. Only in auto mode (manual stores sync on
@@ -314,9 +334,11 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
             replenishDueAt: replen.get(s.id)?.replenishDueAt ?? null,
             replenishOos: replen.get(s.id)?.oos ?? false,
             routineGap: routineGaps.get(s.id) ?? null,
+            freshnessDueAt: freshness.get(s.id)?.freshnessDueAt ?? null,
           };
         })
       ).catch(() => {});
+      await reconcileIngredientSuppressions(store).catch(() => {});
     }
 
     return { runId: run!.id, scored: scored.length, segments, dryRun: false };
