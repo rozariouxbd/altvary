@@ -162,6 +162,10 @@ model Customer {
   // low-margin/discounted items). Needs Product.cost; computed in runScoring.
   recentMarginPct Float?
   marginDropPct   Float?
+  // Skin-introduction hold: expiry of the ~21-day window after this customer's FIRST purchase of an
+  // aggressive active (retinol/acids…), during which flows should delay further aggressive nudges to
+  // cut irritation-driven returns. Set only while active (future); null otherwise. Computed in runScoring.
+  introHoldUntil  DateTime?
   store        Store          @relation(fields: [storeId], references: [id])
   orders       Order[]
   actions      Action[]

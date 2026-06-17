@@ -53,6 +53,11 @@ function signalText(playId: string, c: Customer, s: CustomerSignal | undefined, 
       return c.marginDropPct != null
         ? `margin ↓${c.marginDropPct}pp${c.recentMarginPct != null ? ` (now ${c.recentMarginPct}%)` : ""}`
         : "—";
+    case "R12": {
+      if (!c.introHoldUntil) return "—";
+      const d = Math.max(0, Math.ceil((c.introHoldUntil.getTime() - Date.now()) / 86_400_000));
+      return `${d}d left in intro`;
+    }
     case "R07": return `1st order ${formatMoney(c.totalSpent, currency)}`;
     case "R08": return `${c.orderCount} orders · ${formatMoney(c.totalSpent, currency)} LTV`;
     default: return "—";

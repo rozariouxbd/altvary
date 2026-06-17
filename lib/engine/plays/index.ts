@@ -8,6 +8,7 @@ import { R08 } from "./r08";
 import { R09 } from "./r09";
 import { R10 } from "./r10";
 import { R11 } from "./r11";
+import { R12 } from "./r12";
 
 /** Skincare-vertical features ship behind a flag (off by default) until rolled out. */
 const SKINCARE_FEATURES = process.env.SKINCARE_FEATURES_ENABLED === "true";
@@ -15,12 +16,12 @@ const SKINCARE_FEATURES = process.env.SKINCARE_FEATURES_ENABLED === "true";
 /**
  * The play registry. Plays are defined in code (one file each) and listed here.
  * The core five run on RFME + orders. The skincare plays (R06 exhaustion, R09 routine
- * gap, R10 freshness, R11 margin erosion) need line-item + product metadata and are gated
- * behind SKINCARE_FEATURES_ENABLED.
+ * gap, R10 freshness, R11 margin erosion, R12 new-active introduction) need line-item +
+ * product metadata and are gated behind SKINCARE_FEATURES_ENABLED.
  */
 export const REGISTRY: PlayDefinition[] = [
   R02, R04, R05, R07, R08,
-  ...(SKINCARE_FEATURES ? [R06, R09, R10, R11] : []),
+  ...(SKINCARE_FEATURES ? [R06, R09, R10, R11, R12] : []),
 ];
 
 export const PLAYS_BY_ID: Record<string, PlayDefinition> = Object.fromEntries(

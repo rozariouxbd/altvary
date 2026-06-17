@@ -1,5 +1,5 @@
 import { prisma } from "../prisma";
-import { lifespanDays } from "../skincare";
+import { lifespanDays, hasStrongActive, INTRO_HOLD_DAYS } from "../skincare";
 
 const DAY = 86_400_000;
 
@@ -140,6 +140,38 @@ export async function computeRoutineGaps(storeId: string): Promise<Map<string, s
     if (CORE_STEPS.filter((c) => cats.has(c)).length < 2) continue;
     const missing = CORE_STEPS.find((c) => !cats.has(c));
     if (missing) out.set(cid, missing);
+  }
+  return out;
+}
+
+// ── Skin-introduction hold ──────────────────────────────────────────────────
+
+/**
+ * Per customer, the expiry of the ~21-day hold after their FIRST purchase of an aggressive active
+ * (retinol/acids…). During this window the merchant's flows should delay further aggressive nudges
+ * — pushing a first-time user too fast is a top cause of irritation-driven returns. Only customers
+ * still inside the window (expiry in the future) are returned. Empty when no products carry actives.
+ */
+export async function computeSkinIntro(storeId: string): Promise<Map<string, Date>> {
+  const rows = await prisma.$queryRaw<{ customerId: string; firstAt: Date; ingredients: string[] }[]>`
+    SELECT li."customerId" AS "customerId", MIN(li."createdAt") AS "firstAt", p."ingredients" AS "ingredients"
+    FROM "OrderLineItem" li
+    JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
+    WHERE li."storeId" = ${storeId} AND array_length(p."ingredients", 1) > 0
+    GROUP BY li."customerId", li."productId", p."ingredients"`;
+  // Earliest aggressive-active purchase per customer (substring match runs in JS for flexibility).
+  const firstAggressive = new Map<string, number>();
+  for (const r of rows) {
+    if (!hasStrongActive(r.ingredients)) continue;
+    const ms = new Date(r.firstAt).getTime();
+    const cur = firstAggressive.get(r.customerId);
+    if (cur == null || ms < cur) firstAggressive.set(r.customerId, ms);
+  }
+  const now = Date.now();
+  const out = new Map<string, Date>();
+  for (const [cid, ms] of firstAggressive) {
+    const until = ms + INTRO_HOLD_DAYS * DAY;
+    if (until > now) out.set(cid, new Date(until)); // only while the hold is still active
   }
   return out;
 }

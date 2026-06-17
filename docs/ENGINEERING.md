@@ -235,6 +235,24 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-17 — Skincare Phase 5: Skin-Introduction 21-day hold (R12) · branch `skincare-phase5`
+- **What.** Irritation/return-reduction mechanic. `computeSkinIntro` (lib/engine/exhaustion.ts) finds
+  each customer's FIRST purchase of an aggressive active (retinol/acids…) and holds for ~21 days
+  (`INTRO_HOLD_DAYS`); pushing a first-time user onto more aggressive products too fast is a top
+  cause of irritation-driven returns. Aggressive actives are matched as case-insensitive substrings
+  (`STRONG_ACTIVES` + `hasStrongActive` in lib/skincare.ts) against existing `Product.ingredients` —
+  **no new product field / mapping / ingestion needed**. Persisted as `Customer.introHoldUntil` only
+  while the hold is still active. New **R12** play (layer `engage`, watchlist) targets
+  `introHoldUntil > now`; Klaviyo `altvary_intro_hold` (boolean) lets flows delay aggressive nudges
+  and send gentle onboarding; R12 signal in the recommendations detail view. Gated behind
+  `SKINCARE_FEATURES_ENABLED`.
+- **Schema.** `Customer.introHoldUntil` (DateTime) — migration `add_customer_intro_hold`. Written via
+  the same chunked bulk UPDATE in `runScoring`. No simulator change (it already writes ingredients).
+- **Verification.** `tsc` + `next build` clean. On the demo tenant, a real scoring run persisted
+  `introHoldUntil` for **147** customers in the active window (of 3,190 lifetime aggressive buyers;
+  latest first-aggressive purchase 3 days prior) → **R12 window 147**; R06 (295) / R09 (1,560) /
+  R10 (382) / R11 (471) counts unchanged.
+
 ### 2026-06-17 — Skincare Phase 4: "Glow Down" Margin Alert (R11) · branch `skincare-phase4`
 - **What.** Profitability mechanic completing the skincare moat. `computeMarginErosion`
   (lib/engine/margin.ts) computes each customer's blended product margin % over the recent 90 days

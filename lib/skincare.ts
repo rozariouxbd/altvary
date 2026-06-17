@@ -99,3 +99,29 @@ export function lifespanDays(
 
 /** Flag a product as replenishment-due once this fraction of its lifespan has elapsed. */
 export const AT_RISK_FRACTION = 0.85;
+
+// ── Aggressive actives (skin-introduction hold) ────────────────────────────────
+
+/**
+ * Actives potent enough that a first-time user should ramp in slowly — buying more aggressive
+ * products (or pushing usage) too soon is a top cause of irritation-driven returns. Matched as
+ * case-insensitive substrings against a product's ingredient list, so "Retinol 0.5%",
+ * "Glycolic Acid", "AHA/BHA Exfoliant" etc. all hit. Drives the 21-day skin-introduction hold (R12).
+ */
+export const STRONG_ACTIVES = [
+  "retinol", "retinoid", "retinal", "tretinoin", "adapalene",
+  "salicylic", "benzoyl", "glycolic", "lactic", "mandelic", "azelaic",
+  "aha", "bha",
+];
+
+/** Days to hold aggressive nudges after a customer's first aggressive-active purchase. */
+export const INTRO_HOLD_DAYS = 21;
+
+/** True if any of a product's ingredients is an aggressive active (see STRONG_ACTIVES). */
+export function hasStrongActive(ingredients: string[] | null | undefined): boolean {
+  if (!ingredients?.length) return false;
+  return ingredients.some((ing) => {
+    const s = ing.toLowerCase();
+    return STRONG_ACTIVES.some((a) => s.includes(a));
+  });
+}

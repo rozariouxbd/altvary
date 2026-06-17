@@ -20,6 +20,7 @@ const PROP_FRESHNESS_DUE = "altvary_freshness_due";       // soonest PAO/efficac
 const PROP_DAYS_TO_FRESHNESS = "altvary_days_to_freshness"; // days until then (negative = past)
 const PROP_SUPPRESS_INGREDIENTS = "altvary_suppress_ingredients"; // actives to hide (returns citing irritation)
 const PROP_MARGIN_ALERT = "altvary_margin_alert";         // margin eroding ≥ threshold (gate discount flows)
+const PROP_INTRO_HOLD = "altvary_intro_hold";             // in 21-day new-active intro window (delay aggressive flows)
 
 const DAY = 86_400_000;
 /** Margin-drop (percentage points) at or above which a customer is flagged margin-eroding. */
@@ -98,7 +99,7 @@ export async function verifyKey(rawKey: string): Promise<boolean> {
 // ── Property mapping ───────────────────────────────────────────────────────────
 
 function fullScoreProps(
-  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct">,
+  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil">,
 ): Record<string, unknown> {
   const props: Record<string, unknown> = {};
   if (c.rfmeScore != null) props[PROP_SCORE] = Math.round(c.rfmeScore);
@@ -116,6 +117,7 @@ function fullScoreProps(
     props[PROP_DAYS_TO_FRESHNESS] = Math.round((c.freshnessDueAt.getTime() - Date.now()) / DAY);
   }
   if (c.marginDropPct != null) props[PROP_MARGIN_ALERT] = c.marginDropPct >= MARGIN_ALERT_PCT;
+  if (c.introHoldUntil) props[PROP_INTRO_HOLD] = c.introHoldUntil.getTime() > Date.now();
   return props;
 }
 
@@ -195,12 +197,13 @@ export async function redactProfile(store: Pick<Store, "klaviyoApiKey">, email: 
     [PROP_REPLENISH_OOS]: null, [PROP_ROUTINE_GAP]: null,
     [PROP_FRESHNESS_DUE]: null, [PROP_DAYS_TO_FRESHNESS]: null,
     [PROP_SUPPRESS_INGREDIENTS]: null, [PROP_MARGIN_ALERT]: null,
+    [PROP_INTRO_HOLD]: null,
   });
 }
 
 // ── Bulk reconciliation (the nightly path) ────────────────────────────────────
 
-type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct">;
+type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil">;
 
 /** Klaviyo's bulk import job accepts up to 10,000 profiles per request. */
 const BULK_LIMIT = 10_000;
@@ -281,7 +284,7 @@ export async function reconcileIngredientSuppressions(store: Store): Promise<voi
 export async function syncStoreNow(store: Store): Promise<number> {
   const customers = await prisma.customer.findMany({
     where: { storeId: store.id },
-    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true, replenishOos: true, routineGap: true, freshnessDueAt: true, marginDropPct: true },
+    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true, replenishOos: true, routineGap: true, freshnessDueAt: true, marginDropPct: true, introHoldUntil: true },
   });
   const n = await bulkSyncProfiles(store, customers);
   await reconcileIngredientSuppressions(store).catch(() => {});
