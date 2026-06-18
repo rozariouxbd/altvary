@@ -71,10 +71,11 @@ interface Props {
   lastOrderDays: number;
   q: string;
   skincareEnabled: boolean;
+  notice?: string;
 }
 
 export default function CustomersView(props: Props) {
-  const { rows, counts, storeTotal, filteredTotal, page, pageSize, segment, sort, minOrders, lastOrderDays, q, skincareEnabled } = props;
+  const { rows, counts, storeTotal, filteredTotal, page, pageSize, segment, sort, minOrders, lastOrderDays, q, skincareEnabled, notice } = props;
   const router = useRouter();
 
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -110,8 +111,15 @@ export default function CustomersView(props: Props) {
 
   return (
     <>
-      <Topbar title="Customers" sub={`${storeTotal.toLocaleString()} customers`} />
+      <Topbar title="Customers" sub={`${storeTotal.toLocaleString()} customers`}
+        cta={{ icon: "ti-refresh", label: "Sync from Shopify", href: "/api/shopify/sync?return=/customers" }} />
       <main className="page">
+        {notice === "sync-started" && (
+          <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}>
+            <i className="ti ti-refresh" style={{ color: "var(--pos)" }} />
+            <div>Sync started — pulling the latest customers &amp; orders from Shopify. They&apos;ll appear here in a moment; refresh to see updates.</div>
+          </div>
+        )}
         <div className="note note-acc" style={{ marginBottom: 16 }}>
           <i className="ti ti-brand-shopify"></i>
           <div><strong>Live — scored from your Shopify order history. Export any segment as CSV; one-click Klaviyo push is coming soon.</strong></div>
