@@ -123,6 +123,10 @@ model Product {
   cost         Float?      // unit cost (margin alerts — later)
   marginPct    Float?      // derived margin % (later)
   routineStep  Int?        // position in routine (routine-gap detection — later)
+  // Set when a merchant 1-click-approves the AI Co-Pilot's suggested metadata for this SKU
+  // (app/(app)/settings/data-copilot). Drives the data-completeness "needs review" counts and
+  // lets the Co-Pilot skip already-confirmed products. Null = never reviewed.
+  metaConfirmedAt DateTime?
   store        Store         @relation(fields: [storeId], references: [id])
 
   @@index([storeId])

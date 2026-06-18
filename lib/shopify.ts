@@ -5,7 +5,7 @@ import { encrypt, decrypt } from "./crypto";
 import { runScoring } from "./engine/scoring";
 import { syncOrderFreshness, redactProfile, syncIngredientSuppression, syncActivePlay } from "./klaviyo";
 import { resolveActivePlay } from "./engine/priority";
-import { resolveProductMetadata, mappingUsesMetafields, type MetafieldMapping } from "./skincare";
+import { resolveProductMetadata, mappingUsesMetafields, type MetafieldMapping, type ProductTextSource } from "./skincare";
 import { computeReplenishmentForCustomer } from "./engine/exhaustion";
 
 export const API_VERSION = "2025-01";
@@ -229,8 +229,44 @@ interface ShopifyCustomer {
 }
 interface ShopifyProduct {
   id: number; title: string; status: string;
-  product_type?: string | null; tags?: string | null;
+  product_type?: string | null; tags?: string | null; body_html?: string | null;
   variants: { id: number; sku: string | null; price: string; title: string; inventory_quantity: number | null }[];
+}
+
+/** One scannable variant for the AI Co-Pilot: the Product id + raw text the extractor reads. */
+export interface ScanProduct {
+  id: string;        // variant id (= Product.id)
+  productId: string; // shopify product id
+  title: string;     // product + variant title (display)
+  source: ProductTextSource;
+}
+
+/**
+ * Pull a store's products for the Co-Pilot scan — one row per variant with the raw Shopify text
+ * (title, variant title, product_type, tags, body_html) the deterministic extractor reads. Paged
+ * like backfillProducts. Read-only; suggestions are computed + approved before anything is written.
+ */
+export async function fetchProductsForScan(store: Store): Promise<ScanProduct[]> {
+  const token = await getStoreToken(store.shopDomain);
+  const out: ScanProduct[] = [];
+  let pageInfo: string | null = null;
+  do {
+    const q: string = pageInfo ? `products.json?limit=100&page_info=${pageInfo}` : `products.json?limit=100`;
+    const { data, nextPageInfo } = await adminGet<{ products: ShopifyProduct[] }>(store.shopDomain, token, q);
+    for (const p of data.products) {
+      for (const v of p.variants) {
+        const vt = v.title && v.title !== "Default Title" ? v.title : null;
+        out.push({
+          id: String(v.id),
+          productId: String(p.id),
+          title: p.title + (vt ? ` — ${vt}` : ""),
+          source: { title: p.title, variantTitle: vt, productType: p.product_type, tags: p.tags, body: p.body_html },
+        });
+      }
+    }
+    pageInfo = nextPageInfo;
+  } while (pageInfo);
+  return out;
 }
 
 /** Payload shape shared by the GDPR webhooks (customers/data_request, customers/redact, shop/redact). */

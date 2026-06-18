@@ -235,6 +235,27 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-18 — AI Co-Pilot onboarding: data-completeness audit + 1-click metadata approval · branch `ai-copilot-onboarding`
+- **Why.** The skincare plays need per-SKU metadata (volume, category/routine-step, actives, PAO,
+  cost), which today only the metafield Mapping Wizard provides — assuming the merchant keeps
+  structured metafields, which most don't. Hybrid "suggest → human approves" removes onboarding
+  friction without the risk of blind auto-fill.
+- **What.** Deterministic extractor `suggestProductMetadata` (lib/skincare.ts) — no LLM: `parseVolumeMl`
+  (ml/oz/l regex), `CATEGORY_RULES` (category + routine step 1–4 + default PAO), `KNOWN_ACTIVES`
+  dictionary, `CONCERN_RULES`; returns suggestions + the raw text scanned + a `needsReview` flag when
+  volume/category can't be parsed. `fetchProductsForScan` (lib/shopify.ts, adds `body_html`) pages the
+  live Shopify catalog read-only. New **AI Co-Pilot** wizard (`app/(app)/settings/data-copilot`) — a
+  table of Product · Raw text · Volume · Routine step · Actives with per-row Approve/Edit + "Approve
+  all"; the server action upserts approved values to `Product` and stamps `metaConfirmedAt` (nothing
+  written until approved). New **Data audit** scorecard on Settings: per-field coverage %
+  (category/volume/ingredients/PAO/cost) + inventory-webhooks/Klaviyo, deep-linking to the Co-Pilot.
+  Both gated behind `SKINCARE_FEATURES_ENABLED`.
+- **Schema.** `Product.metaConfirmedAt` (DateTime) — migration `add_product_meta_confirmed`.
+- **Verification.** `tsc` + `next build` clean. Extractor sanity: "30 ml"/"1.7 oz"/"5.07 fl oz"/"1 L"
+  → 30/50/150/1000 ml; Retinol Serum→Serum/step2/[Retinol,Peptides]/Aging; unparseable→needsReview.
+  Completeness SQL validated on the demo store (28 real products, 0% mapped — the exact case the
+  Co-Pilot fixes). Pages are auth-gated → verified via extractor test + SQL + a mockup.
+
 ### 2026-06-17 — Customers CRM: "Skin profile" persona column · branch `skin-profile-column`
 - **Why.** Beauty operators want to see *what kind of skin* a customer has + *how complete their
   regimen is*, not just an LTV/score — anchors the CRM to the skincare vertical.

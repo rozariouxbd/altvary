@@ -103,6 +103,15 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     prisma.scoringConfig.findUnique({ where: { storeId: store.id } }),
   ]) : [null, 0, 0, null];
 
+  // Product-data coverage for the completeness scorecard (skincare vertical only).
+  const productStats = (skincareEnabled && store)
+    ? (await prisma.$queryRaw<{ total: bigint; cat: bigint; vol: bigint; ing: bigint; pao: bigint; cost: bigint; confirmed: bigint }[]>`
+        SELECT count(*) AS total, count("category") AS cat, count("volumeMl") AS vol,
+               count(*) FILTER (WHERE array_length(ingredients, 1) > 0) AS ing,
+               count("paoDays") AS pao, count("cost") AS cost, count("metaConfirmedAt") AS confirmed
+        FROM "Product" WHERE "storeId" = ${store.id}`)[0]
+    : null;
+
   const weightPoints = {
     wR: scoringConfig?.wR ?? DEFAULT_WEIGHT_POINTS.wR,
     wF: scoringConfig?.wF ?? DEFAULT_WEIGHT_POINTS.wF,
@@ -287,6 +296,54 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             </div>
           </div>
         </div>
+
+        {/* Data completeness scorecard — the foundation the skincare plays run on */}
+        {skincareEnabled && productStats && (() => {
+          const n = (b: bigint) => Number(b);
+          const total = n(productStats.total);
+          const pct = (c: bigint) => (total ? Math.round((n(c) / total) * 100) : 0);
+          const rows = [
+            { label: "Category / taxonomy", c: productStats.cat, hint: "routine gaps · exhaustion" },
+            { label: "Volume & sizing", c: productStats.vol, hint: "replenishment timing" },
+            { label: "Active ingredients", c: productStats.ing, hint: "irritation suppression · intro hold" },
+            { label: "PAO / freshness", c: productStats.pao, hint: "potency-expiry nudges" },
+            { label: "Unit cost", c: productStats.cost, hint: "margin-erosion alerts" },
+          ];
+          const reviewed = pct(productStats.confirmed);
+          return (
+            <div className="card" style={{ marginTop: 18 }}>
+              <div className="card-head">
+                <div><div className="card-title">Product data audit</div><div className="card-sub">{total} SKU{total === 1 ? "" : "s"} · the foundation your skincare plays run on</div></div>
+                <a href="/settings/data-copilot" className="btn btn-primary btn-sm"><i className="ti ti-sparkles" /> AI Co-Pilot</a>
+              </div>
+              <div className="card-pad" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {rows.map((r) => {
+                  const p = pct(r.c);
+                  const ok = p >= 90;
+                  return (
+                    <div key={r.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottom: "1px solid var(--line-soft)", paddingBottom: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span className={`dot ${ok ? "pos" : "warn"}`}></span>
+                        <div>
+                          <div style={{ fontSize: "12.5px", fontWeight: 600 }}>{r.label}</div>
+                          <div style={{ fontSize: 11, color: "var(--faint)" }}>{r.hint}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: ok ? "var(--pos)" : "var(--warn)" }}>{n(r.c)}/{total} · {p}%</span>
+                        {!ok && <a href="/settings/data-copilot" style={{ fontSize: 11, color: "var(--accent-ink)" }}>bulk-add →</a>}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                  <span>{reviewed}% of SKUs merchant-confirmed via the Co-Pilot</span>
+                  <span style={{ fontFamily: "var(--mono)" }}>Inventory webhooks {total > 0 ? <b style={{ color: "var(--pos)" }}>active</b> : "—"} · Klaviyo {store?.klaviyoApiKey ? <b style={{ color: "var(--pos)" }}>connected</b> : "not connected"}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Product data mapping (skincare metafields) — gated until the vertical is rolled out */}
         {skincareEnabled && (
