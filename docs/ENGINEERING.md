@@ -235,6 +235,20 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-18 — Perf: Customer hot-path indexes + Vercel sin1 co-location · `main`
+- **Why.** Two latency sources. (1) `Customer` had **no `storeId` index at all** — the Customers grid,
+  every play segment, and the scoring reads all seq-scanned per store. (2) Vercel functions ran in
+  `iad1` (US-East) while Supabase is `ap-southeast-1` (Singapore) → ~200ms cross-Pacific round trip ×
+  several sequential queries per page.
+- **What.** Added composite indexes `Customer (storeId,rfmeScore)` / `(storeId,segment)` /
+  `(storeId,lastOrderAt)` / `(storeId,activePlay)` — migration `add_customer_hot_path_indexes`
+  (the storeId-leftmost prefix also covers bare per-store scans). Set `vercel.json` `regions: ["sin1"]`
+  to co-locate compute with the Singapore DB.
+- **Region note.** Merchants will be US-based; current `sin1` is an interim co-location that also
+  speeds testing from Bangladesh. **Launch plan:** migrate Supabase → a US region (us-east-1) and flip
+  Vercel back to `iad1` so both sit near US merchants. Vercel region is a one-line toggle; the Supabase
+  move is a one-time new-project + data restore.
+
 ### 2026-06-18 — AI Co-Pilot onboarding: data-completeness audit + 1-click metadata approval · branch `ai-copilot-onboarding`
 - **Why.** The skincare plays need per-SKU metadata (volume, category/routine-step, actives, PAO,
   cost), which today only the metafield Mapping Wizard provides — assuming the merchant keeps

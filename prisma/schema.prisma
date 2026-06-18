@@ -192,6 +192,14 @@ model Customer {
   suppressions Suppression[]
   scoreHistory ScoreHistory[]
   ingredientSuppressions CustomerIngredientSuppression[]
+
+  // Hot query paths: Customers grid (sort by score / recency, filter by segment) and every play
+  // segment (filters activePlay). storeId was previously unindexed — these cover the leftmost
+  // storeId prefix too, so all per-store scans become index hits.
+  @@index([storeId, rfmeScore])
+  @@index([storeId, segment])
+  @@index([storeId, lastOrderAt])
+  @@index([storeId, activePlay])
 }
 
 // Per-customer ingredient exclusions (e.g. after a return citing skin irritation). The
