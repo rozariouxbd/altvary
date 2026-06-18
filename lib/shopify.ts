@@ -204,7 +204,7 @@ async function registerWebhook(shop: string, token: string, topic: string): Prom
 
 export async function registerWebhooks(shop: string, token: string): Promise<void> {
   await Promise.all(
-    ["orders/create", "orders/updated", "customers/create", "customers/update",
+    ["orders/create", "orders/updated", "customers/create", "customers/update", "customers/delete",
      "products/create", "products/update", "refunds/create"].map((t) =>
       registerWebhook(shop, token, t).catch(() => {})
     )
@@ -594,6 +594,24 @@ export async function handleWebhook(
           email: c.email ?? "", firstName: c.first_name, lastName: c.last_name,
         },
       });
+      return;
+    }
+    // A customer deleted in Shopify — remove our synced copy + dependents so the app mirrors
+    // Shopify (deletions otherwise never propagate; sync is upsert-only).
+    case "customers/delete": {
+      const customerId = (payload as { id?: number }).id != null ? String((payload as { id?: number }).id) : null;
+      if (!customerId) return;
+      const where = { storeId: store.id, customerId };
+      await prisma.$transaction([
+        prisma.scoreHistory.deleteMany({ where }),
+        prisma.action.deleteMany({ where }),
+        prisma.suppression.deleteMany({ where }),
+        prisma.customerIngredientSuppression.deleteMany({ where }),
+        prisma.orderLineItem.deleteMany({ where }),
+        prisma.order.deleteMany({ where }),
+        prisma.customer.deleteMany({ where: { id: customerId, storeId: store.id } }),
+      ]);
+      console.info("[shopify] customers/delete", { shop: store.shopDomain, customerId });
       return;
     }
     case "products/create":
