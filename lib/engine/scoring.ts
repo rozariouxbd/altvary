@@ -278,7 +278,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         freshnessDueAt: null, daysToFreshness: null,
         recentMarginPct: null, marginDropPct: null, introHoldUntil: null, householdFlag: false,
         activePlay: null, safetyHoldUntil: null, skinProfile: null, routineSteps: null, lapsedActive: null,
-        buyerPersona: null,
+        buyerPersona: null, skinTypeLoyal: false,
       },
     });
     const repEntries = [...replen.entries()];
@@ -443,13 +443,13 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       const tuples: string[] = [];
       const vals: unknown[] = [];
       chunk.forEach(([cid, r], j) => {
-        const b = j * 3;
-        tuples.push(`($${b + 1},$${b + 2},$${b + 3})`);
-        vals.push(cid, r.skinProfile, r.routineSteps);
+        const b = j * 4;
+        tuples.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4})`);
+        vals.push(cid, r.skinProfile, r.routineSteps, r.skinTypeLoyal);
       });
       await prisma.$executeRawUnsafe(
-        `UPDATE "Customer" AS c SET "skinProfile" = v.profile, "routineSteps" = v.steps::int
-         FROM (VALUES ${tuples.join(",")}) AS v(id, profile, steps) WHERE c.id = v.id`,
+        `UPDATE "Customer" AS c SET "skinProfile" = v.profile, "routineSteps" = v.steps::int, "skinTypeLoyal" = v.loyal::boolean
+         FROM (VALUES ${tuples.join(",")}) AS v(id, profile, steps, loyal) WHERE c.id = v.id`,
         ...vals,
       );
     }
@@ -492,6 +492,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
             activePlay: activePlay.get(s.id) ?? null,
             lapsedActive: lapsed.get(s.id) ?? null,
             buyerPersona: persona.get(s.id) ?? null,
+            skinTypeLoyal: regimen.get(s.id)?.skinTypeLoyal ?? false,
           };
         })
       ).catch(() => {});

@@ -200,6 +200,10 @@ model Customer {
   // replenishment/subscription and explorers to discovery/cross-sell. Derived from purchase
   // repeat-rate in runScoring; gifts excluded.
   buyerPersona    String?
+  // Skin-type loyalty (R21): true when the customer's concern-tagged purchases concentrate heavily
+  // on a single skin concern (their skinProfile) — a reliable, concern-loyal customer worth retaining
+  // within that line. Derived alongside skinProfile in runScoring; gifts excluded.
+  skinTypeLoyal   Boolean        @default(false)
   store        Store          @relation(fields: [storeId], references: [id])
   orders       Order[]
   actions      Action[]

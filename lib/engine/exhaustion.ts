@@ -221,7 +221,13 @@ export interface Regimen {
   skinProfile: string | null;
   /** Distinct core routine steps the customer has ever bought (0–4). */
   routineSteps: number;
+  /** True when concern purchases concentrate heavily on one skin concern (R21 skin-type loyalty). */
+  skinTypeLoyal: boolean;
 }
+
+/** Min concern-tagged purchases + dominant-share to count as skin-type loyal (R21). */
+const LOYAL_MIN_CONCERN_PURCHASES = 3;
+const LOYAL_DOMINANT_SHARE = 0.7;
 
 /**
  * Per-customer skin persona for the CRM directory: their most-frequent purchased skin concern
@@ -258,12 +264,16 @@ export async function computeRegimen(storeId: string): Promise<Map<string, Regim
   for (const cid of ids) {
     const counts = concernCounts.get(cid);
     let skinProfile: string | null = null;
+    let skinTypeLoyal = false;
     if (counts) {
-      skinProfile = isHouseholdConflict(counts.keys())
-        ? "Mixed"
-        : [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      const conflict = isHouseholdConflict(counts.keys());
+      const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+      skinProfile = conflict ? "Mixed" : sorted[0][0];
+      // Loyal = enough concern purchases AND a dominant share on one concern AND not a mixed household.
+      const total = sorted.reduce((sum, [, n]) => sum + n, 0);
+      skinTypeLoyal = !conflict && total >= LOYAL_MIN_CONCERN_PURCHASES && sorted[0][1] / total >= LOYAL_DOMINANT_SHARE;
     }
-    out.set(cid, { skinProfile, routineSteps: steps.get(cid)?.size ?? 0 });
+    out.set(cid, { skinProfile, routineSteps: steps.get(cid)?.size ?? 0, skinTypeLoyal });
   }
   return out;
 }
