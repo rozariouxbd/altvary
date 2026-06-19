@@ -235,6 +235,18 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-18 — AI Co-Pilot → Product Data Hub (Confirmed tab) · branch `copilot-hub`
+- **Why.** The Co-Pilot only listed *unconfirmed* products, so once a SKU was approved there was no
+  place to view or edit its skincare metadata (Inventory shows only stock). Rather than a new
+  Products page, the Co-Pilot becomes the single "Beauty DNA" surface for all skincare product params.
+- **What.** `CoPilotTable` now has two tabs — **Needs review** (unconfirmed, fresh suggestions +
+  Approve / Approve-all) and **Confirmed** (already-approved SKUs with their stored values, editable
+  + Save to re-write). The page loads both: review = scan minus confirmed; confirmed = Product rows
+  where `metaConfirmedAt` is set. Re-saving reuses the same upsert action (updates + re-stamps
+  metaConfirmedAt). No new page/nav; logistics stay in Inventory.
+- **Verification.** `tsc` + `next build` clean. Auth-gated page → verified via build + the existing
+  approve action (upsert is idempotent for re-saves).
+
 ### 2026-06-18 — Perf: Customer hot-path indexes + Vercel sin1 co-location · `main`
 - **Why.** Two latency sources. (1) `Customer` had **no `storeId` index at all** — the Customers grid,
   every play segment, and the scoring reads all seq-scanned per store. (2) Vercel functions ran in

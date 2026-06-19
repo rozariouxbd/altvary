@@ -37,16 +37,22 @@ export default async function DataCopilotPage({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const store = await getCurrentStore();
 
-  let rows: CoPilotRow[] = [];
+  let reviewRows: CoPilotRow[] = [];
+  let confirmedRows: CoPilotRow[] = [];
   let scanError = false;
   if (store) {
     try {
-      const [scan, confirmed] = await Promise.all([
+      const [scan, confirmedProducts] = await Promise.all([
         fetchProductsForScan(store),
-        prisma.product.findMany({ where: { storeId: store.id, metaConfirmedAt: { not: null } }, select: { id: true } }),
+        prisma.product.findMany({
+          where: { storeId: store.id, metaConfirmedAt: { not: null } },
+          select: { id: true, productId: true, title: true, volumeMl: true, category: true, routineStep: true, ingredients: true, paoDays: true, skinConcern: true },
+          orderBy: { title: "asc" },
+        }),
       ]);
-      const done = new Set(confirmed.map((c) => c.id));
-      rows = scan.filter((s) => !done.has(s.id)).map((s) => {
+      const done = new Set(confirmedProducts.map((c) => c.id));
+      // "Needs review" — products not yet confirmed, with fresh deterministic suggestions.
+      reviewRows = scan.filter((s) => !done.has(s.id)).map((s) => {
         const m = suggestProductMetadata(s.source);
         return {
           id: s.id, productId: s.productId, title: s.title, rawText: m.rawText,
@@ -55,6 +61,13 @@ export default async function DataCopilotPage({ searchParams }: { searchParams: 
           needsReview: m.needsReview,
         };
       });
+      // "Confirmed" — already-approved products with their stored values, editable to re-save.
+      confirmedRows = confirmedProducts.map((p) => ({
+        id: p.id, productId: p.productId, title: p.title, rawText: "",
+        volumeMl: p.volumeMl ?? undefined, category: p.category ?? undefined, routineStep: p.routineStep ?? undefined,
+        ingredients: p.ingredients ?? [], paoDays: p.paoDays ?? undefined, skinConcern: p.skinConcern ?? undefined,
+        needsReview: false,
+      }));
     } catch {
       scanError = true;
     }
@@ -80,7 +93,7 @@ export default async function DataCopilotPage({ searchParams }: { searchParams: 
             <i className="ti ti-alert-triangle" style={{ color: "var(--warn)" }} /> Couldn&apos;t scan your Shopify catalog right now — check the connection and retry.
           </div></div>
         ) : (
-          <CoPilotTable rows={rows} action={approveProducts} />
+          <CoPilotTable reviewRows={reviewRows} confirmedRows={confirmedRows} action={approveProducts} />
         )}
 
         <div className="note" style={{ marginTop: 16 }}>
