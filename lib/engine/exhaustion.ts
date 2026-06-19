@@ -268,6 +268,44 @@ export async function computeRegimen(storeId: string): Promise<Map<string, Regim
   return out;
 }
 
+// ── Active-ingredient dropout (R23) ─────────────────────────────────────────
+
+const LAPSE_DAYS = 90;          // no repurchase of the active for this long = lapsed
+const MIN_ACTIVE_PURCHASES = 2; // must be an established habit, not a one-off trial
+
+/**
+ * Per customer, a hero active they bought repeatedly (≥2×) but stopped repurchasing (last purchase
+ * of any product containing it ≥90 days ago) — a targeted churn signal distinct from whole-account
+ * dormancy. Picks the most-established lapsed active (highest purchase count). Excludes actives the
+ * customer reacted to (suppression) — never nudge a rebuy of something that irritated them.
+ */
+export async function computeLapsedActives(storeId: string): Promise<Map<string, string>> {
+  const rows = await prisma.$queryRaw<{ customerId: string; active: string; cnt: bigint; lastAt: Date }[]>`
+    SELECT li."customerId" AS "customerId", a.active AS "active",
+           count(*) AS "cnt", MAX(li."createdAt") AS "lastAt"
+    FROM "OrderLineItem" li
+    JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
+    CROSS JOIN LATERAL unnest(p."ingredients") AS a(active)
+    WHERE li."storeId" = ${storeId} AND array_length(p."ingredients", 1) > 0
+      AND NOT EXISTS (
+        SELECT 1 FROM "CustomerIngredientSuppression" s
+        WHERE s."customerId" = li."customerId" AND s.ingredient = a.active)
+    GROUP BY li."customerId", a.active`;
+  const now = Date.now();
+  // Per customer, keep the lapsed active with the highest purchase count (most established habit).
+  const best = new Map<string, { active: string; cnt: number }>();
+  for (const r of rows) {
+    const cnt = Number(r.cnt);
+    if (cnt < MIN_ACTIVE_PURCHASES) continue;
+    if ((now - new Date(r.lastAt).getTime()) / DAY < LAPSE_DAYS) continue; // still repurchasing → not lapsed
+    const cur = best.get(r.customerId);
+    if (cur == null || cnt > cur.cnt) best.set(r.customerId, { active: r.active, cnt });
+  }
+  const out = new Map<string, string>();
+  for (const [cid, v] of best) out.set(cid, v.active);
+  return out;
+}
+
 // ── Safety holds (post-irritation) ──────────────────────────────────────────
 
 /** Days a recent irritation return keeps the whole profile in safety mode (all upsells suppressed). */

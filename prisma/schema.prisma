@@ -187,6 +187,9 @@ model Customer {
   // the expiry of the post-irritation safety window that suppresses all commercial upsells.
   activePlay      String?
   safetyHoldUntil DateTime?
+  // Active-ingredient dropout (R23): a hero active the customer bought repeatedly then stopped
+  // repurchasing (last purchase of it ≥ the lapse window). Re-engagement signal. Computed in runScoring.
+  lapsedActive    String?
   // Skin persona for the Customers CRM grid: the customer's dominant purchased skin concern
   // (e.g. "Acne", or "Mixed" for conflicting profiles), and how many of the 4 core routine steps
   // they've ever bought (0–4). Display-only, derived from line-item skinConcern/category in runScoring.

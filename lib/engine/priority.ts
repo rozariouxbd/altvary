@@ -17,6 +17,7 @@ export interface PriorityInput {
   marginEroding: boolean;        // margin drop ≥ threshold (R11)
   exhaustionDue: boolean;        // in the R06 depletion window AND in stock
   freshnessDue: boolean;         // in the R10 PAO window
+  lapsedActive: boolean;         // dropped a hero active (R23)
   routineGap: boolean;           // missing a core routine step (R09)
 }
 
@@ -40,6 +41,7 @@ export function resolveActivePlay(s: PriorityInput): string | null {
   // Tier 3 — Commercial, most urgent first.
   if (s.exhaustionDue) return "R06";
   if (s.freshnessDue) return "R10";
+  if (s.lapsedActive) return "R23"; // re-engage a dropped hero active before cross-selling
   if (s.routineGap) return "R09";
   return null;
 }

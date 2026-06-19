@@ -1,7 +1,7 @@
 import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { bulkSyncProfiles, reconcileIngredientSuppressions } from "../klaviyo";
-import { computeReplenishment, computeRoutineGaps, computeFreshness, computeSkinIntro, computeHouseholds, computeSafetyHolds, computeRegimen } from "./exhaustion";
+import { computeReplenishment, computeRoutineGaps, computeFreshness, computeSkinIntro, computeHouseholds, computeSafetyHolds, computeRegimen, computeLapsedActives } from "./exhaustion";
 import { computeMarginErosion } from "./margin";
 import { resolveActivePlay } from "./priority";
 
@@ -258,7 +258,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
     // product volume). Reset stale values, then write the freshly-computed ones via
     // the same chunked bulk UPDATE. No-ops gracefully when products lack volume
     // metadata. Read by R06, the dashboard, and the Klaviyo sync below.
-    const [replen, routineGaps, freshness, margin, skinIntro, households, safety, regimen] = await Promise.all([
+    const [replen, routineGaps, freshness, margin, skinIntro, households, safety, regimen, lapsed] = await Promise.all([
       computeReplenishment(store.id),
       computeRoutineGaps(store.id),
       computeFreshness(store.id),
@@ -267,6 +267,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       computeHouseholds(store.id),
       computeSafetyHolds(store.id),
       computeRegimen(store.id),
+      computeLapsedActives(store.id),
     ]);
     // Reset stale skincare-derived fields, then write the freshly-computed ones.
     await prisma.customer.updateMany({
@@ -275,7 +276,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         replenishDueAt: null, daysToDepletion: null, replenishOos: false, routineGap: null,
         freshnessDueAt: null, daysToFreshness: null,
         recentMarginPct: null, marginDropPct: null, introHoldUntil: null, householdFlag: false,
-        activePlay: null, safetyHoldUntil: null, skinProfile: null, routineSteps: null,
+        activePlay: null, safetyHoldUntil: null, skinProfile: null, routineSteps: null, lapsedActive: null,
       },
     });
     const repEntries = [...replen.entries()];
@@ -308,6 +309,22 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       await prisma.$executeRawUnsafe(
         `UPDATE "Customer" AS c SET "routineGap" = v.gap
          FROM (VALUES ${tuples.join(",")}) AS v(id, gap) WHERE c.id = v.id`,
+        ...vals,
+      );
+    }
+    const lapsedEntries = [...lapsed.entries()];
+    for (let i = 0; i < lapsedEntries.length; i += 1000) {
+      const chunk = lapsedEntries.slice(i, i + 1000);
+      const tuples: string[] = [];
+      const vals: unknown[] = [];
+      chunk.forEach(([cid, active], j) => {
+        const b = j * 2;
+        tuples.push(`($${b + 1},$${b + 2})`);
+        vals.push(cid, active);
+      });
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Customer" AS c SET "lapsedActive" = v.active
+         FROM (VALUES ${tuples.join(",")}) AS v(id, active) WHERE c.id = v.id`,
         ...vals,
       );
     }
@@ -381,6 +398,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         marginEroding: (margin.get(s.id)?.marginDropPct ?? 0) >= 10,
         exhaustionDue: r != null && r.daysToDepletion >= -30 && r.daysToDepletion <= 7 && !r.oos,
         freshnessDue: f != null && f.daysToFreshness >= -30 && f.daysToFreshness <= 14,
+        lapsedActive: lapsed.has(s.id),
         routineGap: routineGaps.has(s.id),
       });
       if (won) activePlay.set(s.id, won);
@@ -454,6 +472,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
             introHoldUntil: skinIntro.get(s.id) ?? null,
             householdFlag: households.has(s.id),
             activePlay: activePlay.get(s.id) ?? null,
+            lapsedActive: lapsed.get(s.id) ?? null,
           };
         })
       ).catch(() => {});

@@ -559,6 +559,7 @@ export async function handleWebhook(
         select: {
           email: true, segment: true, routineGap: true, daysToFreshness: true,
           marginDropPct: true, introHoldUntil: true, householdFlag: true, safetyHoldUntil: true,
+          lapsedActive: true,
         },
       });
       if (c) {
@@ -570,6 +571,7 @@ export async function handleWebhook(
           marginEroding: (c.marginDropPct ?? 0) >= 10,
           exhaustionDue: replen != null && replen.daysToDepletion >= -30 && replen.daysToDepletion <= 7 && !replen.oos,
           freshnessDue: c.daysToFreshness != null && c.daysToFreshness >= -30 && c.daysToFreshness <= 14,
+          lapsedActive: c.lapsedActive != null,
           routineGap: c.routineGap != null,
         });
         await prisma.customer.update({ where: { id: customerId }, data: { activePlay: won } }).catch(() => {});
