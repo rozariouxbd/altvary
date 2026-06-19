@@ -17,6 +17,7 @@ export interface PriorityInput {
   marginEroding: boolean;        // margin drop ≥ threshold (R11)
   exhaustionDue: boolean;        // in the R06 depletion window AND in stock
   freshnessDue: boolean;         // in the R10 PAO window
+  routineDropout: boolean;       // whole established routine went quiet (R28)
   lapsedActive: boolean;         // dropped a hero active (R23)
   routineGap: boolean;           // missing a core routine step (R09)
 }
@@ -29,7 +30,8 @@ export const SAFETY_PLAYS = [SAFETY_IRRITATION, "R12"] as const;
 
 /**
  * Resolve the single highest-priority active play for a customer, or null when none apply.
- * Order: Safety (irritation → R12) → Brand protection (R13 → R11) → Commercial (R06 → R10 → R09).
+ * Order: Safety (irritation → R12) → Brand protection (R13 → R11) →
+ * Commercial active (R06 → R10) → Win-back (R28 → R23) → Cross-sell (R09).
  */
 export function resolveActivePlay(s: PriorityInput): string | null {
   // Tier 1 — Safety: a biological/safety signal silences all commercial upsells.
@@ -38,10 +40,11 @@ export function resolveActivePlay(s: PriorityInput): string | null {
   // Tier 2 — Brand protection.
   if (s.householdFlag) return "R13";
   if (s.marginEroding) return "R11";
-  // Tier 3 — Commercial, most urgent first.
+  // Tier 3 — Commercial, most urgent first: active-customer windows before win-back before cross-sell.
   if (s.exhaustionDue) return "R06";
   if (s.freshnessDue) return "R10";
-  if (s.lapsedActive) return "R23"; // re-engage a dropped hero active before cross-selling
-  if (s.routineGap) return "R09";
+  if (s.routineDropout) return "R28"; // whole routine lapsed — strongest churn signal, win it back first
+  if (s.lapsedActive) return "R23";   // re-engage a single dropped hero active
+  if (s.routineGap) return "R09";     // cross-sell the missing step to an active customer
   return null;
 }

@@ -26,6 +26,7 @@ const PROP_ACTIVE_PLAY = "altvary_active_play";           // THE single arbitrat
 const PROP_LAPSED_ACTIVE = "altvary_lapsed_active";       // hero active the customer dropped (R23 re-engage)
 const PROP_BUYER_PERSONA = "altvary_buyer_persona";       // loyalist | explorer | balanced (R26 segmentation)
 const PROP_SKIN_TYPE_LOYAL = "altvary_skin_type_loyal";   // concentrated on one skin concern (R21)
+const PROP_ROUTINE_LAPSED = "altvary_routine_lapsed";     // whole routine went quiet — win-back (R28)
 
 const DAY = 86_400_000;
 /** Margin-drop (percentage points) at or above which a customer is flagged margin-eroding. */
@@ -104,7 +105,7 @@ export async function verifyKey(rawKey: string): Promise<boolean> {
 // ── Property mapping ───────────────────────────────────────────────────────────
 
 function fullScoreProps(
-  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil" | "householdFlag" | "activePlay" | "lapsedActive" | "buyerPersona" | "skinTypeLoyal">,
+  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil" | "householdFlag" | "activePlay" | "lapsedActive" | "buyerPersona" | "skinTypeLoyal" | "routineLapsed">,
 ): Record<string, unknown> {
   const props: Record<string, unknown> = {};
   if (c.rfmeScore != null) props[PROP_SCORE] = Math.round(c.rfmeScore);
@@ -127,6 +128,7 @@ function fullScoreProps(
   if (c.lapsedActive) props[PROP_LAPSED_ACTIVE] = c.lapsedActive; // hero active to re-engage (R23)
   if (c.buyerPersona) props[PROP_BUYER_PERSONA] = c.buyerPersona; // loyalist/explorer/balanced (R26)
   if (c.skinTypeLoyal) props[PROP_SKIN_TYPE_LOYAL] = true; // concern-loyal (R21)
+  if (c.routineLapsed) props[PROP_ROUTINE_LAPSED] = true; // whole routine lapsed — win-back (R28)
   if (c.activePlay) props[PROP_ACTIVE_PLAY] = c.activePlay; // the mutual-exclusion gate for flows
   return props;
 }
@@ -224,13 +226,13 @@ export async function redactProfile(store: Pick<Store, "klaviyoApiKey">, email: 
     [PROP_FRESHNESS_DUE]: null, [PROP_DAYS_TO_FRESHNESS]: null,
     [PROP_SUPPRESS_INGREDIENTS]: null, [PROP_MARGIN_ALERT]: null,
     [PROP_INTRO_HOLD]: null, [PROP_HOUSEHOLD]: null, [PROP_ACTIVE_PLAY]: null, [PROP_LAPSED_ACTIVE]: null,
-    [PROP_BUYER_PERSONA]: null, [PROP_SKIN_TYPE_LOYAL]: null,
+    [PROP_BUYER_PERSONA]: null, [PROP_SKIN_TYPE_LOYAL]: null, [PROP_ROUTINE_LAPSED]: null,
   });
 }
 
 // ── Bulk reconciliation (the nightly path) ────────────────────────────────────
 
-type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil" | "householdFlag" | "activePlay" | "lapsedActive" | "buyerPersona" | "skinTypeLoyal">;
+type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil" | "householdFlag" | "activePlay" | "lapsedActive" | "buyerPersona" | "skinTypeLoyal" | "routineLapsed">;
 
 /** Klaviyo's bulk import job accepts up to 10,000 profiles per request. */
 const BULK_LIMIT = 10_000;
@@ -311,7 +313,7 @@ export async function reconcileIngredientSuppressions(store: Store): Promise<voi
 export async function syncStoreNow(store: Store): Promise<number> {
   const customers = await prisma.customer.findMany({
     where: { storeId: store.id },
-    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true, replenishOos: true, routineGap: true, freshnessDueAt: true, marginDropPct: true, introHoldUntil: true, householdFlag: true, activePlay: true, lapsedActive: true, buyerPersona: true, skinTypeLoyal: true },
+    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true, replenishOos: true, routineGap: true, freshnessDueAt: true, marginDropPct: true, introHoldUntil: true, householdFlag: true, activePlay: true, lapsedActive: true, buyerPersona: true, skinTypeLoyal: true, routineLapsed: true },
   });
   const n = await bulkSyncProfiles(store, customers);
   await reconcileIngredientSuppressions(store).catch(() => {});

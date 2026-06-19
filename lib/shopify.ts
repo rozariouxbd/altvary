@@ -629,6 +629,7 @@ export async function handleWebhook(
           marginEroding: (c.marginDropPct ?? 0) >= 10,
           exhaustionDue: replen != null && replen.daysToDepletion >= -30 && replen.daysToDepletion <= 7 && !replen.oos,
           freshnessDue: c.daysToFreshness != null && c.daysToFreshness >= -30 && c.daysToFreshness <= 14,
+          routineDropout: false, // this very order ends any routine-lapse window; nightly run re-evaluates
           lapsedActive: c.lapsedActive != null,
           routineGap: c.routineGap != null,
         });

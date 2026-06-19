@@ -60,6 +60,7 @@ function signalText(playId: string, c: Customer, s: CustomerSignal | undefined, 
     }
     case "R13": return c.householdFlag ? "multiple skin profiles" : "—";
     case "R23": return c.lapsedActive ? `dropped ${c.lapsedActive}` : "—";
+    case "R28": return c.routineLapsed ? "whole routine lapsed" : "—";
     case "R07": return `1st order ${formatMoney(c.totalSpent, currency)}`;
     case "R08": return `${c.orderCount} orders · ${formatMoney(c.totalSpent, currency)} LTV`;
     default: return "—";

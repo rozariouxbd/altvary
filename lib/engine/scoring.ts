@@ -1,7 +1,7 @@
 import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { bulkSyncProfiles, reconcileIngredientSuppressions } from "../klaviyo";
-import { computeReplenishment, computeRoutineGaps, computeFreshness, computeSkinIntro, computeHouseholds, computeSafetyHolds, computeRegimen, computeLapsedActives, computeBuyerPersona } from "./exhaustion";
+import { computeReplenishment, computeRoutineGaps, computeFreshness, computeSkinIntro, computeHouseholds, computeSafetyHolds, computeRegimen, computeLapsedActives, computeBuyerPersona, computeRoutineDropout } from "./exhaustion";
 import { computeMarginErosion } from "./margin";
 import { resolveActivePlay } from "./priority";
 
@@ -258,7 +258,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
     // product volume). Reset stale values, then write the freshly-computed ones via
     // the same chunked bulk UPDATE. No-ops gracefully when products lack volume
     // metadata. Read by R06, the dashboard, and the Klaviyo sync below.
-    const [replen, routineGaps, freshness, margin, skinIntro, households, safety, regimen, lapsed, persona] = await Promise.all([
+    const [replen, routineGaps, freshness, margin, skinIntro, households, safety, regimen, lapsed, persona, routineDropout] = await Promise.all([
       computeReplenishment(store.id),
       computeRoutineGaps(store.id),
       computeFreshness(store.id),
@@ -269,6 +269,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       computeRegimen(store.id),
       computeLapsedActives(store.id),
       computeBuyerPersona(store.id),
+      computeRoutineDropout(store.id),
     ]);
     // Reset stale skincare-derived fields, then write the freshly-computed ones.
     await prisma.customer.updateMany({
@@ -278,7 +279,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         freshnessDueAt: null, daysToFreshness: null,
         recentMarginPct: null, marginDropPct: null, introHoldUntil: null, householdFlag: false,
         activePlay: null, safetyHoldUntil: null, skinProfile: null, routineSteps: null, lapsedActive: null,
-        buyerPersona: null, skinTypeLoyal: false,
+        buyerPersona: null, skinTypeLoyal: false, routineLapsed: false,
       },
     });
     const repEntries = [...replen.entries()];
@@ -385,6 +386,13 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         data: { householdFlag: true },
       });
     }
+    const dropoutIds = [...routineDropout];
+    for (let i = 0; i < dropoutIds.length; i += 1000) {
+      await prisma.customer.updateMany({
+        where: { storeId: store.id, id: { in: dropoutIds.slice(i, i + 1000) } },
+        data: { routineLapsed: true },
+      });
+    }
 
     // Conflict arbitration: resolve each customer's single winning play (Waterfall Priority) from the
     // freshly-computed signals, and persist it + the safety-hold expiry. The play segments + Klaviyo
@@ -400,6 +408,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         marginEroding: (margin.get(s.id)?.marginDropPct ?? 0) >= 10,
         exhaustionDue: r != null && r.daysToDepletion >= -30 && r.daysToDepletion <= 7 && !r.oos,
         freshnessDue: f != null && f.daysToFreshness >= -30 && f.daysToFreshness <= 14,
+        routineDropout: routineDropout.has(s.id),
         lapsedActive: lapsed.has(s.id),
         routineGap: routineGaps.has(s.id),
       });
@@ -493,6 +502,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
             lapsedActive: lapsed.get(s.id) ?? null,
             buyerPersona: persona.get(s.id) ?? null,
             skinTypeLoyal: regimen.get(s.id)?.skinTypeLoyal ?? false,
+            routineLapsed: routineDropout.has(s.id),
           };
         })
       ).catch(() => {});

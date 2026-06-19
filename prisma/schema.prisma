@@ -204,6 +204,10 @@ model Customer {
   // on a single skin concern (their skinProfile) — a reliable, concern-loyal customer worth retaining
   // within that line. Derived alongside skinProfile in runScoring; gifts excluded.
   skinTypeLoyal   Boolean        @default(false)
+  // Routine dropout (R28): the customer had an established routine (≥2 core steps) but has bought no
+  // core-step product in the lapse window — the WHOLE routine went quiet, a stronger churn signal than
+  // a single dropped active (R23) and distinct from RFME dormancy (R02). Computed in runScoring.
+  routineLapsed   Boolean        @default(false)
   store        Store          @relation(fields: [storeId], references: [id])
   orders       Order[]
   actions      Action[]

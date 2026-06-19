@@ -156,6 +156,34 @@ export async function computeRoutineGaps(storeId: string): Promise<Map<string, s
   return out;
 }
 
+// ── Routine dropout (R28) ────────────────────────────────────────────────────
+
+const ROUTINE_DROPOUT_DAYS = 90; // no core-step purchase for this long = whole routine lapsed
+const ROUTINE_MIN_STEPS = 2;     // must have had an established routine to "drop" it
+
+/**
+ * Customers whose WHOLE routine has gone quiet: they once bought ≥2 distinct core routine steps
+ * (an established regimen) but haven't bought ANY core-step product in the lapse window. A stronger
+ * churn signal than a single dropped active (R23) and distinct from RFME-based dormancy (R02), so it
+ * earns its own win-back. Returns the set of flagged customer ids. Gifts excluded.
+ */
+export async function computeRoutineDropout(storeId: string): Promise<Set<string>> {
+  const rows = await prisma.$queryRaw<{ customerId: string; steps: bigint; lastAt: Date }[]>`
+    SELECT li."customerId" AS "customerId",
+           count(DISTINCT p."category") AS "steps", MAX(li."createdAt") AS "lastAt"
+    FROM "OrderLineItem" li
+    JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
+    WHERE li."storeId" = ${storeId} AND NOT li."isGift" AND p."category" = ANY(${CORE_STEPS})
+    GROUP BY li."customerId"`;
+  const now = Date.now();
+  const flagged = new Set<string>();
+  for (const r of rows) {
+    if (Number(r.steps) < ROUTINE_MIN_STEPS) continue; // never had an established routine
+    if ((now - new Date(r.lastAt).getTime()) / DAY >= ROUTINE_DROPOUT_DAYS) flagged.add(r.customerId);
+  }
+  return flagged;
+}
+
 // ── Skin-introduction hold ──────────────────────────────────────────────────
 
 /**
