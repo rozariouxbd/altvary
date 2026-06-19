@@ -184,6 +184,43 @@ export async function computeRoutineDropout(storeId: string): Promise<Set<string
   return flagged;
 }
 
+// ── Post-purchase reaction risk (R27) ────────────────────────────────────────
+
+const REACTION_WINDOW_DAYS = 60; // strong-active purchases this recent are still in the irritation-onset window
+
+/**
+ * Customers at predictive risk of an irritation reaction — flagged BEFORE a return, so the merchant
+ * can send barrier-support education. Two classic over-exfoliation patterns: (a) stacking — ≥2
+ * distinct strong-active products bought within the recent window; or (b) a recent strong active with
+ * no barrier support — they own a strong active but have never bought a Moisturizer. Customers already
+ * in a post-irritation suppression are excluded (they've reacted; education is moot). Gifts excluded.
+ */
+export async function computeReactionRisk(storeId: string): Promise<Set<string>> {
+  const rows = await prisma.$queryRaw<{ customerId: string; ingredients: string[]; category: string | null; lastAt: Date }[]>`
+    SELECT li."customerId" AS "customerId", p."ingredients" AS "ingredients",
+           p."category" AS "category", MAX(li."createdAt") AS "lastAt"
+    FROM "OrderLineItem" li
+    JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
+    WHERE li."storeId" = ${storeId} AND NOT li."isGift"
+      AND NOT EXISTS (
+        SELECT 1 FROM "CustomerIngredientSuppression" s WHERE s."customerId" = li."customerId")
+    GROUP BY li."customerId", li."productId", p."ingredients", p."category"`;
+  const now = Date.now();
+  const recentStrong = new Map<string, number>(); // distinct strong-active products bought recently
+  const ownsMoisturizer = new Set<string>();
+  for (const r of rows) {
+    if (r.category === "Moisturizer") ownsMoisturizer.add(r.customerId);
+    if (hasStrongActive(r.ingredients) && (now - new Date(r.lastAt).getTime()) / DAY <= REACTION_WINDOW_DAYS) {
+      recentStrong.set(r.customerId, (recentStrong.get(r.customerId) ?? 0) + 1);
+    }
+  }
+  const flagged = new Set<string>();
+  for (const [cid, n] of recentStrong) {
+    if (n >= 2 || !ownsMoisturizer.has(cid)) flagged.add(cid); // stacking, or strong active with no barrier
+  }
+  return flagged;
+}
+
 // ── Skin-introduction hold ──────────────────────────────────────────────────
 
 /**

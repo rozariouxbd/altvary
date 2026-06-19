@@ -208,6 +208,10 @@ model Customer {
   // core-step product in the lapse window — the WHOLE routine went quiet, a stronger churn signal than
   // a single dropped active (R23) and distinct from RFME dormancy (R02). Computed in runScoring.
   routineLapsed   Boolean        @default(false)
+  // Post-purchase reaction risk (R27): predictive — recently bought multiple strong actives (stacking)
+  // or a strong active with no barrier/moisturizer support. Pre-empts irritation returns/bad reviews
+  // with barrier-education before a reaction happens. Advisory flag (not arbitrated). Set in runScoring.
+  reactionRisk    Boolean        @default(false)
   store        Store          @relation(fields: [storeId], references: [id])
   orders       Order[]
   actions      Action[]
