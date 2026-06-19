@@ -320,6 +320,15 @@ interface ShopifyLineItem {
   title: string;
   quantity: number;
   price: string;
+  properties?: { name: string; value: string }[] | null; // custom line props (gift message/wrap)
+}
+/** Subset of a Shopify address used for gift detection (recipient name + where it ships). */
+interface ShopifyAddress {
+  first_name?: string | null;
+  last_name?: string | null;
+  name?: string | null;
+  address1?: string | null;
+  zip?: string | null;
 }
 interface ShopifyOrder {
   id: number; total_price: string; financial_status: string | null; created_at: string;
@@ -327,6 +336,10 @@ interface ShopifyOrder {
   refunds?: { id: number }[];
   source_name?: string | null;
   line_items?: ShopifyLineItem[];
+  note?: string | null;
+  note_attributes?: { name: string; value: string }[] | null;
+  shipping_address?: ShopifyAddress | null;
+  billing_address?: ShopifyAddress | null;
 }
 
 /** A refunds/create payload (subset) — drives ingredient auto-suppression. */
@@ -363,6 +376,45 @@ function isRefunded(o: ShopifyOrder): boolean {
   );
 }
 
+/** Gift-intent phrases in an order/line-item note. Deliberately tight — corroborates, never decides alone. */
+const GIFT_NOTE_RE = /\bgift\b|gift[ -]?wrap|gift[ -]?message|gift[ -]?note|happy birthday|congratulation|anniversary|present for|surprise for/i;
+
+/** Recipient name on an address as a normalized lower-case string ("" when absent). */
+function recipientName(a: ShopifyAddress | null | undefined): string {
+  if (!a) return "";
+  const joined = `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim() || (a.name ?? "");
+  return joined.trim().toLowerCase();
+}
+
+/**
+ * Deterministic gift detection from the order payload alone (no DB lookups — runs on the ingest hot
+ * path). An order is a gift when the shipping recipient differs from the account holder (billing name)
+ * AND a corroborating signal is present: a gift note (order note / note_attributes / line-item
+ * properties) OR the shipping address itself differs from billing. Conservative by design — the
+ * cost of a false positive is wrongly skipping a real replenishment, so name-mismatch alone (typos,
+ * maiden names, "ship to my office") is never enough. See R24: gifts are excluded from the
+ * product-consumption computes so a one-time present can't reset someone's replenish clock.
+ */
+function detectGift(o: ShopifyOrder): boolean {
+  const ship = recipientName(o.shipping_address);
+  const bill = recipientName(o.billing_address);
+  if (!ship || !bill || ship === bill) return false; // need a clear recipient≠holder name mismatch
+
+  const noteText = [
+    o.note ?? "",
+    ...(o.note_attributes ?? []).map((n) => `${n.name} ${n.value}`),
+    ...(o.line_items ?? []).flatMap((li) => (li.properties ?? []).map((p) => `${p.name} ${p.value}`)),
+  ].join(" ");
+  const giftNote = GIFT_NOTE_RE.test(noteText);
+
+  const s = o.shipping_address, b = o.billing_address;
+  const addressMismatch = !!s && !!b &&
+    (((s.address1 ?? "").trim().toLowerCase() !== (b.address1 ?? "").trim().toLowerCase()) ||
+     ((s.zip ?? "").trim().toLowerCase() !== (b.zip ?? "").trim().toLowerCase()));
+
+  return giftNote || addressMismatch;
+}
+
 /**
  * Replace an order's line items — the keystone for skincare features (which products were
  * in which order). Idempotent: clears + rewrites, so re-syncs and orders/updated stay
@@ -370,7 +422,7 @@ function isRefunded(o: ShopifyOrder): boolean {
  */
 async function writeLineItems(
   storeId: string, orderId: string, customerId: string, createdAt: Date,
-  items: ShopifyLineItem[] | undefined,
+  items: ShopifyLineItem[] | undefined, isGift = false,
 ): Promise<void> {
   if (!items?.length) return;
   const rows = items
@@ -380,7 +432,7 @@ async function writeLineItems(
       if (!productId) return null;
       const price = Number(li.price) || 0;
       const quantity = li.quantity || 1;
-      return { storeId, orderId, customerId, productId, title: li.title ?? "", quantity, price, lineTotal: price * quantity, createdAt };
+      return { storeId, orderId, customerId, productId, title: li.title ?? "", quantity, price, lineTotal: price * quantity, isGift, createdAt };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
   await prisma.orderLineItem.deleteMany({ where: { orderId } });
@@ -450,22 +502,25 @@ export async function backfillStore(store: Store): Promise<{ customers: number; 
       if (!o.customer) continue; // skip guest checkouts
       const customerId = String(o.customer.id);
       const createdAt = new Date(o.created_at);
+      const gift = detectGift(o);
       await prisma.order.upsert({
         where: { id: String(o.id) },
         create: {
           id: String(o.id), storeId: store.id, customerId,
           totalPrice: Number(o.total_price) || 0,
           refunded: isRefunded(o),
+          isGift: gift,
           source: channelLabel(o.source_name),
           createdAt,
         },
         update: {
           totalPrice: Number(o.total_price) || 0,
           refunded: isRefunded(o),
+          isGift: gift,
           source: channelLabel(o.source_name),
         },
       });
-      await writeLineItems(store.id, String(o.id), customerId, createdAt, o.line_items);
+      await writeLineItems(store.id, String(o.id), customerId, createdAt, o.line_items, gift);
       orderCount++;
       const prev = lastOrderByCustomer.get(customerId);
       if (!prev || createdAt > prev) lastOrderByCustomer.set(customerId, createdAt);
@@ -524,22 +579,25 @@ export async function handleWebhook(
         create: { id: customerId, storeId: store.id, email: "" },
         update: {},
       });
+      const gift = detectGift(o);
       await prisma.order.upsert({
         where: { id: String(o.id) },
         create: {
           id: String(o.id), storeId: store.id, customerId,
           totalPrice: Number(o.total_price) || 0,
           refunded: isRefunded(o),
+          isGift: gift,
           source: channelLabel(o.source_name),
           createdAt: new Date(o.created_at),
         },
         update: {
           totalPrice: Number(o.total_price) || 0,
           refunded: isRefunded(o),
+          isGift: gift,
           source: channelLabel(o.source_name),
         },
       });
-      await writeLineItems(store.id, String(o.id), customerId, new Date(o.created_at), o.line_items);
+      await writeLineItems(store.id, String(o.id), customerId, new Date(o.created_at), o.line_items, gift);
       await recomputeAggregates(store.id, customerId);
       // Recompute this customer's soonest product depletion — a fresh order of a
       // product resets its clock ("applies the brakes"). Persist + push to Klaviyo.

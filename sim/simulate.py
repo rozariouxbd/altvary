@@ -104,6 +104,10 @@ def _make_order(rng, cust: dict, when: datetime, oid: list[int]) -> dict:
     net = round(sum(li[2] for li in line_items), 2)  # order total = sum of line nets
     cancelled = bool(rng.random() < p["cancel"])
     refunded = bool((not cancelled) and rng.random() < p["refund"])
+    # ~8% of orders are gifts (ship-to ≠ account holder): they count toward RFME/LTV but must NOT
+    # feed the product-consumption computes (exhaustion/regimen/household/lapsed) — R24. Never a
+    # gift when the customer is on subscription (those are the buyer's own replenishments).
+    gift = bool((not cust["subscription"]) and rng.random() < 0.08)
     lead = items[0]
     oid[0] += 1
     return {
@@ -114,7 +118,7 @@ def _make_order(rng, cust: dict, when: datetime, oid: list[int]) -> dict:
         "skin_concern": lead.skin_concern, "bundle": any(i.is_bundle for i in items),
         "subscription": cust["subscription"],
         "gross_amount": round(gross, 2), "discount_used": disc_used, "discount_pct": pct,
-        "amount": net, "refunded": refunded, "cancelled": cancelled,
+        "amount": net, "refunded": refunded, "cancelled": cancelled, "gift": gift,
         # Full basket as JSON [[sku, qty, line_total], …]; write_db expands to OrderLineItem rows.
         "items_json": json.dumps(line_items),
     }
@@ -187,6 +191,9 @@ def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP,
     orders = orders.copy()
     orders["cancelled"] = orders["cancelled"].astype(str).str.lower().isin(["true", "1"])
     orders["refunded"] = orders["refunded"].astype(str).str.lower().isin(["true", "1"])
+    if "gift" not in orders.columns:
+        orders["gift"] = False
+    orders["gift"] = orders["gift"].astype(str).str.lower().isin(["true", "1"])
     with psycopg2.connect(dsn) as conn, conn.cursor() as cur:
         # Upsert by shopDomain. For an EXISTING store the placeholder token/trial are ignored
         # (DO UPDATE only no-ops shopDomain), so a real store's config is never clobbered.
@@ -219,11 +226,11 @@ def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP,
         # Orders (exclude cancelled — the schema has no cancelled state)
         live = orders[~orders.cancelled]
         orows = [(
-            nid(o.order_id), sid, nid(o.customer_id), float(o.amount), bool(o.refunded), "Simulator",
+            nid(o.order_id), sid, nid(o.customer_id), float(o.amount), bool(o.refunded), bool(getattr(o, "gift", False)), "Simulator",
             o.created_at.to_pydatetime() if hasattr(o.created_at, "to_pydatetime") else o.created_at,
         ) for o in live.itertuples()]
         execute_values(cur,
-            'INSERT INTO "Order" (id,"storeId","customerId","totalPrice",refunded,source,"createdAt") '
+            'INSERT INTO "Order" (id,"storeId","customerId","totalPrice",refunded,"isGift",source,"createdAt") '
             'VALUES %s ON CONFLICT (id) DO NOTHING', orows)
         # Products (catalog with volume + category) — namespaced per store.
         def pid(sku: str) -> str:
@@ -250,15 +257,16 @@ def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP,
             if not basket:
                 basket = [[o.sku, 1, float(o.amount)]]
             created = o.created_at.to_pydatetime() if hasattr(o.created_at, "to_pydatetime") else o.created_at
+            gift = bool(getattr(o, "gift", False))  # denormalized onto each line item (R24 exclusion)
             for idx, (sku, qty, line_total) in enumerate(basket):
                 prod = cat_by_sku.get(sku)
                 title = f"{prod.skin_concern} {prod.category}" if prod else str(sku)
                 lirows.append((
                     f"sim-{tag}-li-{o.order_id}-{idx}", sid, nid(o.order_id), nid(o.customer_id), pid(sku),
-                    title, int(qty), float(line_total), float(line_total), created,
+                    title, int(qty), float(line_total), float(line_total), gift, created,
                 ))
         execute_values(cur,
-            'INSERT INTO "OrderLineItem" (id,"storeId","orderId","customerId","productId",title,quantity,price,"lineTotal","createdAt") '
+            'INSERT INTO "OrderLineItem" (id,"storeId","orderId","customerId","productId",title,quantity,price,"lineTotal","isGift","createdAt") '
             'VALUES %s ON CONFLICT (id) DO NOTHING', lirows)
         conn.commit()
     print(f"[db] store '{shop}': {len(custs_df)} customers, {int((~orders.cancelled).sum())} live orders, "

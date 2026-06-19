@@ -233,6 +233,7 @@ model Order {
   customerId  String
   totalPrice  Float
   refunded    Boolean  @default(false)
+  isGift      Boolean  @default(false) // shipping recipient ≠ account holder + a gift signal (R24)
   source      String?
   createdAt   DateTime
   store       Store    @relation(fields: [storeId], references: [id])
@@ -252,6 +253,7 @@ model OrderLineItem {
   quantity   Int      @default(1)
   price      Float    @default(0)
   lineTotal  Float    @default(0)
+  isGift     Boolean  @default(false) // denormalized from Order.isGift so consumption computes can exclude gifts (R24)
   createdAt  DateTime // mirrors the order's createdAt for fast per-product recency
   order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   // No enforced FK to Product: a line item can reference a variant we don't have a

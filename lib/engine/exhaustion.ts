@@ -53,7 +53,7 @@ export async function computeReplenishment(storeId: string): Promise<Map<string,
            p."inventoryQty" AS "inventoryQty"
     FROM "OrderLineItem" li
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
-    WHERE li."storeId" = ${storeId} AND COALESCE(p."sizeValue", p."volumeMl") > 0
+    WHERE li."storeId" = ${storeId} AND NOT li."isGift" AND COALESCE(p."sizeValue", p."volumeMl") > 0
       AND NOT EXISTS (
         SELECT 1 FROM "CustomerIngredientSuppression" s
         WHERE s."customerId" = li."customerId" AND s.ingredient = ANY(p."ingredients"))
@@ -74,7 +74,7 @@ export async function computeReplenishmentForCustomer(
     FROM "OrderLineItem" li
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
     WHERE li."storeId" = ${storeId} AND li."customerId" = ${customerId}
-      AND COALESCE(p."sizeValue", p."volumeMl") > 0
+      AND NOT li."isGift" AND COALESCE(p."sizeValue", p."volumeMl") > 0
       AND NOT EXISTS (
         SELECT 1 FROM "CustomerIngredientSuppression" s
         WHERE s."customerId" = li."customerId" AND s.ingredient = ANY(p."ingredients"))
@@ -106,7 +106,7 @@ export async function computeFreshness(storeId: string): Promise<Map<string, Fre
     SELECT li."customerId" AS "customerId", MAX(li."createdAt") AS "lastAt", p."paoDays" AS "paoDays"
     FROM "OrderLineItem" li
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
-    WHERE li."storeId" = ${storeId} AND p."paoDays" IS NOT NULL AND p."paoDays" > 0
+    WHERE li."storeId" = ${storeId} AND NOT li."isGift" AND p."paoDays" IS NOT NULL AND p."paoDays" > 0
       AND NOT EXISTS (
         SELECT 1 FROM "CustomerIngredientSuppression" s
         WHERE s."customerId" = li."customerId" AND s.ingredient = ANY(p."ingredients"))
@@ -140,7 +140,7 @@ export async function computeRoutineGaps(storeId: string): Promise<Map<string, s
     SELECT DISTINCT li."customerId" AS "customerId", p."category" AS "category"
     FROM "OrderLineItem" li
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
-    WHERE li."storeId" = ${storeId} AND p."category" IS NOT NULL`;
+    WHERE li."storeId" = ${storeId} AND NOT li."isGift" AND p."category" IS NOT NULL`;
   const byCustomer = new Map<string, Set<string>>();
   for (const r of rows) {
     const s = byCustomer.get(r.customerId) ?? new Set<string>();
@@ -169,7 +169,7 @@ export async function computeSkinIntro(storeId: string): Promise<Map<string, Dat
     SELECT li."customerId" AS "customerId", MIN(li."createdAt") AS "firstAt", p."ingredients" AS "ingredients"
     FROM "OrderLineItem" li
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
-    WHERE li."storeId" = ${storeId} AND array_length(p."ingredients", 1) > 0
+    WHERE li."storeId" = ${storeId} AND NOT li."isGift" AND array_length(p."ingredients", 1) > 0
     GROUP BY li."customerId", li."productId", p."ingredients"`;
   // Earliest aggressive-active purchase per customer (substring match runs in JS for flexibility).
   const firstAggressive = new Map<string, number>();
@@ -200,7 +200,7 @@ export async function computeHouseholds(storeId: string): Promise<Set<string>> {
     SELECT DISTINCT li."customerId" AS "customerId", p."skinConcern" AS "concern"
     FROM "OrderLineItem" li
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
-    WHERE li."storeId" = ${storeId} AND p."skinConcern" IS NOT NULL`;
+    WHERE li."storeId" = ${storeId} AND NOT li."isGift" AND p."skinConcern" IS NOT NULL`;
   const byCustomer = new Map<string, Set<string>>();
   for (const r of rows) {
     const s = byCustomer.get(r.customerId) ?? new Set<string>();
@@ -235,7 +235,7 @@ export async function computeRegimen(storeId: string): Promise<Map<string, Regim
            count(*) AS "n"
     FROM "OrderLineItem" li
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
-    WHERE li."storeId" = ${storeId} AND (p."skinConcern" IS NOT NULL OR p."category" IS NOT NULL)
+    WHERE li."storeId" = ${storeId} AND NOT li."isGift" AND (p."skinConcern" IS NOT NULL OR p."category" IS NOT NULL)
     GROUP BY li."customerId", p."skinConcern", p."category"`;
   // Tally concern frequency + the set of core steps per customer.
   const concernCounts = new Map<string, Map<string, number>>();
@@ -286,7 +286,7 @@ export async function computeLapsedActives(storeId: string): Promise<Map<string,
     FROM "OrderLineItem" li
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
     CROSS JOIN LATERAL unnest(p."ingredients") AS a(active)
-    WHERE li."storeId" = ${storeId} AND array_length(p."ingredients", 1) > 0
+    WHERE li."storeId" = ${storeId} AND NOT li."isGift" AND array_length(p."ingredients", 1) > 0
       AND NOT EXISTS (
         SELECT 1 FROM "CustomerIngredientSuppression" s
         WHERE s."customerId" = li."customerId" AND s.ingredient = a.active)
