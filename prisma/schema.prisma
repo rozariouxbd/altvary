@@ -195,6 +195,11 @@ model Customer {
   // they've ever bought (0–4). Display-only, derived from line-item skinConcern/category in runScoring.
   skinProfile     String?
   routineSteps    Int?
+  // Buyer persona (R26): "loyalist" (rebuys the same heroes), "explorer" (keeps trying new SKUs),
+  // or "balanced". A segmentation attribute (not an arbitrated play) — routes loyalists to
+  // replenishment/subscription and explorers to discovery/cross-sell. Derived from purchase
+  // repeat-rate in runScoring; gifts excluded.
+  buyerPersona    String?
   store        Store          @relation(fields: [storeId], references: [id])
   orders       Order[]
   actions      Action[]

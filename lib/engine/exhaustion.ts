@@ -306,6 +306,39 @@ export async function computeLapsedActives(storeId: string): Promise<Map<string,
   return out;
 }
 
+// ── Buyer persona: explorer vs loyalist (R26) ───────────────────────────────
+
+const PERSONA_MIN_PURCHASES = 3;     // too few purchases to read a pattern
+const LOYALIST_REPEAT_RATE = 0.4;    // ≥40% of purchases are rebuys of a product they already own
+const EXPLORER_REPEAT_RATE = 0.15;   // ≤15% rebuys …
+const EXPLORER_MIN_DISTINCT = 4;     // … across a broad set of distinct products
+
+/**
+ * Per customer, a buying persona from their repeat-rate: "loyalist" (rebuys the same heroes),
+ * "explorer" (keeps trying new SKUs), or "balanced". repeatRate = (purchases − distinct) / purchases.
+ * Customers with < PERSONA_MIN_PURCHASES purchases are too sparse to classify and are omitted.
+ * Gifts are excluded (a present isn't the buyer's own taste). Segmentation only — not arbitrated.
+ */
+export async function computeBuyerPersona(storeId: string): Promise<Map<string, string>> {
+  const rows = await prisma.$queryRaw<{ customerId: string; purchases: bigint; distinct: bigint }[]>`
+    SELECT li."customerId" AS "customerId",
+           count(*) AS "purchases", count(DISTINCT li."productId") AS "distinct"
+    FROM "OrderLineItem" li
+    WHERE li."storeId" = ${storeId} AND NOT li."isGift"
+    GROUP BY li."customerId"`;
+  const out = new Map<string, string>();
+  for (const r of rows) {
+    const purchases = Number(r.purchases);
+    const distinct = Number(r.distinct);
+    if (purchases < PERSONA_MIN_PURCHASES) continue;
+    const repeatRate = (purchases - distinct) / purchases;
+    if (repeatRate >= LOYALIST_REPEAT_RATE) out.set(r.customerId, "loyalist");
+    else if (repeatRate <= EXPLORER_REPEAT_RATE && distinct >= EXPLORER_MIN_DISTINCT) out.set(r.customerId, "explorer");
+    else out.set(r.customerId, "balanced");
+  }
+  return out;
+}
+
 // ── Safety holds (post-irritation) ──────────────────────────────────────────
 
 /** Days a recent irritation return keeps the whole profile in safety mode (all upsells suppressed). */
