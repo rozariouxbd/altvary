@@ -5,7 +5,7 @@ import { encrypt, decrypt } from "./crypto";
 import { runScoring } from "./engine/scoring";
 import { syncOrderFreshness, redactProfile, syncIngredientSuppression, syncActivePlay } from "./klaviyo";
 import { resolveActivePlay } from "./engine/priority";
-import { resolveProductMetadata, mappingUsesMetafields, type MetafieldMapping, type ProductTextSource } from "./skincare";
+import { resolveProductMetadata, mappingUsesMetafields, classifyTexture, detectBundle, type MetafieldMapping, type ProductTextSource } from "./skincare";
 import { computeReplenishmentForCustomer } from "./engine/exhaustion";
 
 export const API_VERSION = "2025-01";
@@ -295,11 +295,15 @@ export async function backfillProducts(store: Store): Promise<number> {
         ? await fetchProductMetafields(store.shopDomain, token, p.id).catch(() => undefined)
         : undefined;
       const meta = resolveProductMetadata(mapping, { product_type: p.product_type, tags: p.tags, metafields });
+      // Deterministic source signals for R25 (formulation weight) + R32 (bundle), from the product text.
+      const ptext = `${p.title} ${p.product_type ?? ""} ${p.tags ?? ""}`;
+      const texture = classifyTexture(ptext);
+      const isBundle = detectBundle(ptext);
       for (const v of p.variants) {
         const title = p.title + (v.title && v.title !== "Default Title" ? ` — ${v.title}` : "");
         const fields = {
           title, sku: v.sku || null, price: Number(v.price) || 0,
-          inventoryQty: v.inventory_quantity ?? 0, status: p.status, ...meta,
+          inventoryQty: v.inventory_quantity ?? 0, status: p.status, texture, isBundle, ...meta,
         };
         await prisma.product.upsert({
           where: { id: String(v.id) },
@@ -340,6 +344,8 @@ interface ShopifyOrder {
   note_attributes?: { name: string; value: string }[] | null;
   shipping_address?: ShopifyAddress | null;
   billing_address?: ShopifyAddress | null;
+  discount_codes?: { code: string }[] | null;
+  landing_site?: string | null;
 }
 
 /** A refunds/create payload (subset) — drives ingredient auto-suppression. */
@@ -378,6 +384,22 @@ function isRefunded(o: ShopifyOrder): boolean {
 
 /** Gift-intent phrases in an order/line-item note. Deliberately tight — corroborates, never decides alone. */
 const GIFT_NOTE_RE = /\bgift\b|gift[ -]?wrap|gift[ -]?message|gift[ -]?note|happy birthday|congratulation|anniversary|present for|surprise for/i;
+
+/**
+ * Acquisition attribution for an order (R29): the creator/campaign that drove it. A discount code is
+ * the strongest signal (creator/affiliate codes); else a utm_campaign/utm_source from the landing URL.
+ * Normalized to lower-case. Null when neither is present. Payload-local — runs on the ingest hot path.
+ */
+function parseAcquisition(o: ShopifyOrder): string | null {
+  const code = o.discount_codes?.[0]?.code?.trim();
+  if (code) return code.toLowerCase();
+  const m = (o.landing_site ?? "").match(/[?&]utm_(?:campaign|source)=([^&#]+)/i);
+  if (m) {
+    const v = decodeURIComponent(m[1].replace(/\+/g, " ")).trim().toLowerCase();
+    if (v) return v;
+  }
+  return null;
+}
 
 /** Recipient name on an address as a normalized lower-case string ("" when absent). */
 function recipientName(a: ShopifyAddress | null | undefined): string {
@@ -503,6 +525,7 @@ export async function backfillStore(store: Store): Promise<{ customers: number; 
       const customerId = String(o.customer.id);
       const createdAt = new Date(o.created_at);
       const gift = detectGift(o);
+      const acq = parseAcquisition(o);
       await prisma.order.upsert({
         where: { id: String(o.id) },
         create: {
@@ -510,6 +533,7 @@ export async function backfillStore(store: Store): Promise<{ customers: number; 
           totalPrice: Number(o.total_price) || 0,
           refunded: isRefunded(o),
           isGift: gift,
+          acquisitionSource: acq,
           source: channelLabel(o.source_name),
           createdAt,
         },
@@ -517,6 +541,7 @@ export async function backfillStore(store: Store): Promise<{ customers: number; 
           totalPrice: Number(o.total_price) || 0,
           refunded: isRefunded(o),
           isGift: gift,
+          acquisitionSource: acq,
           source: channelLabel(o.source_name),
         },
       });
@@ -580,6 +605,7 @@ export async function handleWebhook(
         update: {},
       });
       const gift = detectGift(o);
+      const acq = parseAcquisition(o);
       await prisma.order.upsert({
         where: { id: String(o.id) },
         create: {
@@ -587,6 +613,7 @@ export async function handleWebhook(
           totalPrice: Number(o.total_price) || 0,
           refunded: isRefunded(o),
           isGift: gift,
+          acquisitionSource: acq,
           source: channelLabel(o.source_name),
           createdAt: new Date(o.created_at),
         },
@@ -594,6 +621,7 @@ export async function handleWebhook(
           totalPrice: Number(o.total_price) || 0,
           refunded: isRefunded(o),
           isGift: gift,
+          acquisitionSource: acq,
           source: channelLabel(o.source_name),
         },
       });

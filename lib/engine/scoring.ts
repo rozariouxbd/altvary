@@ -1,7 +1,7 @@
 import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { bulkSyncProfiles, reconcileIngredientSuppressions } from "../klaviyo";
-import { computeReplenishment, computeRoutineGaps, computeFreshness, computeSkinIntro, computeHouseholds, computeSafetyHolds, computeRegimen, computeLapsedActives, computeBuyerPersona, computeRoutineDropout, computeReactionRisk } from "./exhaustion";
+import { computeReplenishment, computeRoutineGaps, computeFreshness, computeSkinIntro, computeHouseholds, computeSafetyHolds, computeRegimen, computeLapsedActives, computeBuyerPersona, computeRoutineDropout, computeReactionRisk, computeAcquisition, computeAdvocates, computeSeasonalShift, computeBundleDropout, computeReformulationWatch } from "./exhaustion";
 import { computeMarginErosion } from "./margin";
 import { resolveActivePlay } from "./priority";
 
@@ -258,7 +258,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
     // product volume). Reset stale values, then write the freshly-computed ones via
     // the same chunked bulk UPDATE. No-ops gracefully when products lack volume
     // metadata. Read by R06, the dashboard, and the Klaviyo sync below.
-    const [replen, routineGaps, freshness, margin, skinIntro, households, safety, regimen, lapsed, persona, routineDropout, reactionRisk] = await Promise.all([
+    const [replen, routineGaps, freshness, margin, skinIntro, households, safety, regimen, lapsed, persona, routineDropout, reactionRisk, acquisition, advocates, seasonalShift, bundleDropout, reformWatch] = await Promise.all([
       computeReplenishment(store.id),
       computeRoutineGaps(store.id),
       computeFreshness(store.id),
@@ -271,6 +271,11 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       computeBuyerPersona(store.id),
       computeRoutineDropout(store.id),
       computeReactionRisk(store.id),
+      computeAcquisition(store.id),
+      computeAdvocates(store.id),
+      computeSeasonalShift(store.id),
+      computeBundleDropout(store.id),
+      computeReformulationWatch(store.id),
     ]);
     // Reset stale skincare-derived fields, then write the freshly-computed ones.
     await prisma.customer.updateMany({
@@ -281,6 +286,7 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         recentMarginPct: null, marginDropPct: null, introHoldUntil: null, householdFlag: false,
         activePlay: null, safetyHoldUntil: null, skinProfile: null, routineSteps: null, lapsedActive: null,
         buyerPersona: null, skinTypeLoyal: false, routineLapsed: false, reactionRisk: false,
+        acquisitionSource: null, advocate: false, seasonalShift: null, bundleLapsed: false,
       },
     });
     const repEntries = [...replen.entries()];
@@ -401,6 +407,62 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
         data: { reactionRisk: true },
       });
     }
+    const advocateIds = [...advocates];
+    for (let i = 0; i < advocateIds.length; i += 1000) {
+      await prisma.customer.updateMany({
+        where: { storeId: store.id, id: { in: advocateIds.slice(i, i + 1000) } },
+        data: { advocate: true },
+      });
+    }
+    const bundleIds = [...bundleDropout];
+    for (let i = 0; i < bundleIds.length; i += 1000) {
+      await prisma.customer.updateMany({
+        where: { storeId: store.id, id: { in: bundleIds.slice(i, i + 1000) } },
+        data: { bundleLapsed: true },
+      });
+    }
+    // Text-valued personas (acquisition source + predicted seasonal texture) via chunked bulk UPDATE.
+    const acqEntries = [...acquisition.entries()];
+    for (let i = 0; i < acqEntries.length; i += 1000) {
+      const chunk = acqEntries.slice(i, i + 1000);
+      const tuples: string[] = [];
+      const vals: unknown[] = [];
+      chunk.forEach(([cid, src], j) => {
+        const b = j * 2;
+        tuples.push(`($${b + 1},$${b + 2})`);
+        vals.push(cid, src);
+      });
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Customer" AS c SET "acquisitionSource" = v.src
+         FROM (VALUES ${tuples.join(",")}) AS v(id, src) WHERE c.id = v.id`,
+        ...vals,
+      );
+    }
+    const seasonEntries = [...seasonalShift.entries()];
+    for (let i = 0; i < seasonEntries.length; i += 1000) {
+      const chunk = seasonEntries.slice(i, i + 1000);
+      const tuples: string[] = [];
+      const vals: unknown[] = [];
+      chunk.forEach(([cid, tex], j) => {
+        const b = j * 2;
+        tuples.push(`($${b + 1},$${b + 2})`);
+        vals.push(cid, tex);
+      });
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Customer" AS c SET "seasonalShift" = v.tex
+         FROM (VALUES ${tuples.join(",")}) AS v(id, tex) WHERE c.id = v.id`,
+        ...vals,
+      );
+    }
+    // Reformulation watch is product-level: reset the store's flags, then set the flagged SKUs.
+    await prisma.product.updateMany({ where: { storeId: store.id, reformulationWatch: true }, data: { reformulationWatch: false } });
+    const reformIds = [...reformWatch];
+    for (let i = 0; i < reformIds.length; i += 1000) {
+      await prisma.product.updateMany({
+        where: { storeId: store.id, id: { in: reformIds.slice(i, i + 1000) } },
+        data: { reformulationWatch: true },
+      });
+    }
 
     // Conflict arbitration: resolve each customer's single winning play (Waterfall Priority) from the
     // freshly-computed signals, and persist it + the safety-hold expiry. The play segments + Klaviyo
@@ -512,6 +574,10 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
             skinTypeLoyal: regimen.get(s.id)?.skinTypeLoyal ?? false,
             routineLapsed: routineDropout.has(s.id),
             reactionRisk: reactionRisk.has(s.id),
+            acquisitionSource: acquisition.get(s.id) ?? null,
+            advocate: advocates.has(s.id),
+            seasonalShift: seasonalShift.get(s.id) ?? null,
+            bundleLapsed: bundleDropout.has(s.id),
           };
         })
       ).catch(() => {});

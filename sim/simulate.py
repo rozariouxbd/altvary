@@ -43,6 +43,8 @@ ARCHETYPES = {
 # Field names matching the ARCHETYPES tuples exactly (first element is weight).
 _FIELDS = ["weight", "gap", "gap_sd", "aov", "churn_days", "sub", "disc", "refund", "cancel"]
 DISCOUNTS = [10, 15, 20, 25]
+# Creator/affiliate codes + campaigns that acquire customers (R29 acquisition attribution).
+CREATORS = ["glowwithava", "skinbysam", "derm_daily", "tiktok_spring", "yt_review_mia", "insta_glow"]
 
 
 def params(arch: str) -> dict:
@@ -61,12 +63,15 @@ def make_customer(rng, cid: int, signup: datetime) -> dict:
     # Behavior-driven churn: Gamma (shape 2) is less memoryless than exponential,
     # so tenure/frequency carry real predictive signal (unlike the toy ml/ generator).
     lifespan = float(rng.gamma(2.0, p["churn_days"] / 2.0))
+    # Acquisition attribution (R29): ~45% of customers came in via a creator/affiliate code or campaign.
+    acquisition = CREATORS[rng.integers(len(CREATORS))] if rng.random() < 0.45 else None
     return {
         "customer_id": f"sim-c-{cid}",
         "archetype": arch,
         "signup_date": signup,
         "subscription": bool(rng.random() < p["sub"]),
         "primary_skin_concern": SKIN_CONCERNS[rng.integers(len(SKIN_CONCERNS))],
+        "acquisition": acquisition,
         "_lifespan": lifespan,
         "_churn_date": signup + timedelta(days=lifespan),
     }
@@ -119,6 +124,7 @@ def _make_order(rng, cust: dict, when: datetime, oid: list[int]) -> dict:
         "subscription": cust["subscription"],
         "gross_amount": round(gross, 2), "discount_used": disc_used, "discount_pct": pct,
         "amount": net, "refunded": refunded, "cancelled": cancelled, "gift": gift,
+        "acquisition": cust.get("acquisition"),
         # Full basket as JSON [[sku, qty, line_total], …]; write_db expands to OrderLineItem rows.
         "items_json": json.dumps(line_items),
     }
@@ -194,6 +200,9 @@ def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP,
     if "gift" not in orders.columns:
         orders["gift"] = False
     orders["gift"] = orders["gift"].astype(str).str.lower().isin(["true", "1"])
+    if "acquisition" not in orders.columns:
+        orders["acquisition"] = None
+    orders["acquisition"] = orders["acquisition"].where(orders["acquisition"].notna(), None)
     with psycopg2.connect(dsn) as conn, conn.cursor() as cur:
         # Upsert by shopDomain. For an EXISTING store the placeholder token/trial are ignored
         # (DO UPDATE only no-ops shopDomain), so a real store's config is never clobbered.
@@ -226,23 +235,31 @@ def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP,
         # Orders (exclude cancelled — the schema has no cancelled state)
         live = orders[~orders.cancelled]
         orows = [(
-            nid(o.order_id), sid, nid(o.customer_id), float(o.amount), bool(o.refunded), bool(getattr(o, "gift", False)), "Simulator",
+            nid(o.order_id), sid, nid(o.customer_id), float(o.amount), bool(o.refunded), bool(getattr(o, "gift", False)),
+            (getattr(o, "acquisition", None) or None), "Simulator",
             o.created_at.to_pydatetime() if hasattr(o.created_at, "to_pydatetime") else o.created_at,
         ) for o in live.itertuples()]
         execute_values(cur,
-            'INSERT INTO "Order" (id,"storeId","customerId","totalPrice",refunded,"isGift",source,"createdAt") '
+            'INSERT INTO "Order" (id,"storeId","customerId","totalPrice",refunded,"isGift","acquisitionSource",source,"createdAt") '
             'VALUES %s ON CONFLICT (id) DO NOTHING', orows)
         # Products (catalog with volume + category) — namespaced per store.
         def pid(sku: str) -> str:
             return f"sim-{tag}-p-{sku}"
+        # Formulation weight per category (R25 seasonal) — rich vs light; None when ambiguous.
+        TEXTURE_BY_CAT = {
+            "Moisturizer": "rich", "Oil": "rich", "Balm": "rich", "Eye Cream": "rich", "Mask": "rich", "Night Cream": "rich",
+            "Cleanser": "light", "Serum": "light", "Toner": "light", "Essence": "light", "Sunscreen": "light",
+        }
         prows = [(
             pid(p.sku), sid, pid(p.sku), p.title, p.sku, float(p.price), 100, "active",
             float(p.volume_ml), "ml", p.category, int(p.pao_days), list(p.ingredients), float(p.cost), p.skin_concern,
+            TEXTURE_BY_CAT.get(p.category), bool(p.is_bundle),
         ) for p in CATALOG]
         execute_values(cur,
-            'INSERT INTO "Product" (id,"storeId","productId",title,sku,price,"inventoryQty",status,"sizeValue","sizeUnit",category,"paoDays",ingredients,cost,"skinConcern") '
+            'INSERT INTO "Product" (id,"storeId","productId",title,sku,price,"inventoryQty",status,"sizeValue","sizeUnit",category,"paoDays",ingredients,cost,"skinConcern",texture,"isBundle") '
             'VALUES %s ON CONFLICT (id) DO UPDATE SET "sizeValue"=EXCLUDED."sizeValue", "sizeUnit"=EXCLUDED."sizeUnit", category=EXCLUDED.category, '
-            '"paoDays"=EXCLUDED."paoDays", ingredients=EXCLUDED.ingredients, cost=EXCLUDED.cost, "skinConcern"=EXCLUDED."skinConcern"', prows)
+            '"paoDays"=EXCLUDED."paoDays", ingredients=EXCLUDED.ingredients, cost=EXCLUDED.cost, "skinConcern"=EXCLUDED."skinConcern", '
+            'texture=EXCLUDED.texture, "isBundle"=EXCLUDED."isBundle"', prows)
         # Order line items — one row per basket item (items_json), so multi-product baskets feed
         # exhaustion / routine gaps / margin / suppression. Falls back to the lead sku for old
         # exports without items_json.

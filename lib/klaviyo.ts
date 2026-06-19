@@ -28,6 +28,10 @@ const PROP_BUYER_PERSONA = "altvary_buyer_persona";       // loyalist | explorer
 const PROP_SKIN_TYPE_LOYAL = "altvary_skin_type_loyal";   // concentrated on one skin concern (R21)
 const PROP_ROUTINE_LAPSED = "altvary_routine_lapsed";     // whole routine went quiet — win-back (R28)
 const PROP_REACTION_RISK = "altvary_reaction_risk";       // predictive irritation risk — barrier education (R27)
+const PROP_ACQUISITION = "altvary_acquisition_source";    // creator/campaign that won the customer (R29)
+const PROP_ADVOCATE = "altvary_advocate";                 // likely brand advocate — referral/UGC target (R30)
+const PROP_SEASONAL_SHIFT = "altvary_seasonal_shift";     // predicted upcoming-season texture rich/light (R25)
+const PROP_BUNDLE_LAPSED = "altvary_bundle_lapsed";       // stopped buying bundles — re-engage on a set (R32)
 
 const DAY = 86_400_000;
 /** Margin-drop (percentage points) at or above which a customer is flagged margin-eroding. */
@@ -106,7 +110,7 @@ export async function verifyKey(rawKey: string): Promise<boolean> {
 // ── Property mapping ───────────────────────────────────────────────────────────
 
 function fullScoreProps(
-  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil" | "householdFlag" | "activePlay" | "lapsedActive" | "buyerPersona" | "skinTypeLoyal" | "routineLapsed" | "reactionRisk">,
+  c: Pick<Customer, "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil" | "householdFlag" | "activePlay" | "lapsedActive" | "buyerPersona" | "skinTypeLoyal" | "routineLapsed" | "reactionRisk" | "acquisitionSource" | "advocate" | "seasonalShift" | "bundleLapsed">,
 ): Record<string, unknown> {
   const props: Record<string, unknown> = {};
   if (c.rfmeScore != null) props[PROP_SCORE] = Math.round(c.rfmeScore);
@@ -131,6 +135,10 @@ function fullScoreProps(
   if (c.skinTypeLoyal) props[PROP_SKIN_TYPE_LOYAL] = true; // concern-loyal (R21)
   if (c.routineLapsed) props[PROP_ROUTINE_LAPSED] = true; // whole routine lapsed — win-back (R28)
   if (c.reactionRisk) props[PROP_REACTION_RISK] = true; // predictive irritation risk — barrier education (R27)
+  if (c.acquisitionSource) props[PROP_ACQUISITION] = c.acquisitionSource; // creator/campaign attribution (R29)
+  if (c.advocate) props[PROP_ADVOCATE] = true; // likely advocate — referral/UGC (R30)
+  if (c.seasonalShift) props[PROP_SEASONAL_SHIFT] = c.seasonalShift; // predicted seasonal texture (R25)
+  if (c.bundleLapsed) props[PROP_BUNDLE_LAPSED] = true; // dropped the bundle habit (R32)
   if (c.activePlay) props[PROP_ACTIVE_PLAY] = c.activePlay; // the mutual-exclusion gate for flows
   return props;
 }
@@ -229,12 +237,13 @@ export async function redactProfile(store: Pick<Store, "klaviyoApiKey">, email: 
     [PROP_SUPPRESS_INGREDIENTS]: null, [PROP_MARGIN_ALERT]: null,
     [PROP_INTRO_HOLD]: null, [PROP_HOUSEHOLD]: null, [PROP_ACTIVE_PLAY]: null, [PROP_LAPSED_ACTIVE]: null,
     [PROP_BUYER_PERSONA]: null, [PROP_SKIN_TYPE_LOYAL]: null, [PROP_ROUTINE_LAPSED]: null, [PROP_REACTION_RISK]: null,
+    [PROP_ACQUISITION]: null, [PROP_ADVOCATE]: null, [PROP_SEASONAL_SHIFT]: null, [PROP_BUNDLE_LAPSED]: null,
   });
 }
 
 // ── Bulk reconciliation (the nightly path) ────────────────────────────────────
 
-type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil" | "householdFlag" | "activePlay" | "lapsedActive" | "buyerPersona" | "skinTypeLoyal" | "routineLapsed" | "reactionRisk">;
+type SyncableCustomer = Pick<Customer, "email" | "rfmeScore" | "segment" | "lastOrderAt" | "replenishDueAt" | "replenishOos" | "routineGap" | "freshnessDueAt" | "marginDropPct" | "introHoldUntil" | "householdFlag" | "activePlay" | "lapsedActive" | "buyerPersona" | "skinTypeLoyal" | "routineLapsed" | "reactionRisk" | "acquisitionSource" | "advocate" | "seasonalShift" | "bundleLapsed">;
 
 /** Klaviyo's bulk import job accepts up to 10,000 profiles per request. */
 const BULK_LIMIT = 10_000;
@@ -315,7 +324,7 @@ export async function reconcileIngredientSuppressions(store: Store): Promise<voi
 export async function syncStoreNow(store: Store): Promise<number> {
   const customers = await prisma.customer.findMany({
     where: { storeId: store.id },
-    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true, replenishOos: true, routineGap: true, freshnessDueAt: true, marginDropPct: true, introHoldUntil: true, householdFlag: true, activePlay: true, lapsedActive: true, buyerPersona: true, skinTypeLoyal: true, routineLapsed: true, reactionRisk: true },
+    select: { email: true, rfmeScore: true, segment: true, lastOrderAt: true, replenishDueAt: true, replenishOos: true, routineGap: true, freshnessDueAt: true, marginDropPct: true, introHoldUntil: true, householdFlag: true, activePlay: true, lapsedActive: true, buyerPersona: true, skinTypeLoyal: true, routineLapsed: true, reactionRisk: true, acquisitionSource: true, advocate: true, seasonalShift: true, bundleLapsed: true },
   });
   const n = await bulkSyncProfiles(store, customers);
   await reconcileIngredientSuppressions(store).catch(() => {});

@@ -129,6 +129,11 @@ model Product {
   cost         Float?      // unit cost (margin alerts — later)
   marginPct    Float?      // derived margin % (later)
   routineStep  Int?        // position in routine (routine-gap detection — later)
+  texture      String?     // formulation weight: "rich" | "light" (seasonal shift — R25); derived in ingest
+  isBundle     Boolean @default(false) // product is a bundle/set/kit/duo (bundle disruption — R32); derived
+  // Per-product adverse shift: repeat-rate down / return-rate up vs the prior window — a possible
+  // reformulation hurting repeat purchase (R31). Set in runScoring; product-level, not per-customer.
+  reformulationWatch Boolean @default(false)
   // Set when a merchant 1-click-approves the AI Co-Pilot's suggested metadata for this SKU
   // (app/(app)/settings/data-copilot). Drives the data-completeness "needs review" counts and
   // lets the Co-Pilot skip already-confirmed products. Null = never reviewed.
@@ -212,6 +217,18 @@ model Customer {
   // or a strong active with no barrier/moisturizer support. Pre-empts irritation returns/bad reviews
   // with barrier-education before a reaction happens. Advisory flag (not arbitrated). Set in runScoring.
   reactionRisk    Boolean        @default(false)
+  // Acquisition source (R29): the creator/campaign that first acquired this customer (their earliest
+  // order's acquisitionSource). Feeds creator-LTV ranking + Klaviyo segmentation. Derived in runScoring.
+  acquisitionSource String?
+  // Brand advocate (R30): high-value, loyal, gives gifts, no irritation returns — a likely referral/UGC
+  // source. Composite of existing signals (no new ingest). Set in runScoring.
+  advocate        Boolean        @default(false)
+  // Seasonal formulation shift (R25): predicted texture ("rich"/"light") for the upcoming season from
+  // the customer's prior-year seasonal buying. Null when no seasonal pattern. Derived in runScoring.
+  seasonalShift   String?
+  // Bundle dropout (R32): the customer used to buy bundles but has stopped (last bundle ≥ lapse window).
+  // Derived in runScoring; gifts excluded.
+  bundleLapsed    Boolean        @default(false)
   store        Store          @relation(fields: [storeId], references: [id])
   orders       Order[]
   actions      Action[]
@@ -252,6 +269,9 @@ model Order {
   refunded    Boolean  @default(false)
   isGift      Boolean  @default(false) // shipping recipient ≠ account holder + a gift signal (R24)
   source      String?
+  // Acquisition attribution (R29): creator/campaign that drove this order — parsed at ingest from the
+  // order's discount code or landing_site UTM (utm_source/utm_campaign). Null when none present.
+  acquisitionSource String?
   createdAt   DateTime
   store       Store    @relation(fields: [storeId], references: [id])
   customer    Customer @relation(fields: [customerId], references: [id])

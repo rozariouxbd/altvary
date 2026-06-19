@@ -221,6 +221,159 @@ export async function computeReactionRisk(storeId: string): Promise<Set<string>>
   return flagged;
 }
 
+// ── Acquisition attribution (R29) ─────────────────────────────────────────────
+
+/**
+ * Per customer, the acquisition source (creator/campaign) of their EARLIEST attributed order — the
+ * first touch that won them. Powers creator-LTV ranking + Klaviyo segmentation. Orders with no
+ * attribution are skipped, so a customer maps to their first order that carried a code/UTM.
+ */
+export async function computeAcquisition(storeId: string): Promise<Map<string, string>> {
+  const rows = await prisma.$queryRaw<{ customerId: string; source: string }[]>`
+    SELECT DISTINCT ON (o."customerId") o."customerId" AS "customerId", o."acquisitionSource" AS "source"
+    FROM "Order" o
+    WHERE o."storeId" = ${storeId} AND o."acquisitionSource" IS NOT NULL
+    ORDER BY o."customerId", o."createdAt" ASC`;
+  const out = new Map<string, string>();
+  for (const r of rows) out.set(r.customerId, r.source);
+  return out;
+}
+
+// ── Brand advocates (R30) ─────────────────────────────────────────────────────
+
+const ADVOCATE_MIN_ORDERS = 3;       // established, repeat customer
+const ADVOCATE_MIN_TENURE_DAYS = 180; // around long enough to have a relationship
+
+/**
+ * Likely brand advocates (R30): established, loyal customers who buy gifts for others (word-of-mouth)
+ * and have never had an irritation return. A composite of signals we already have — no new ingest.
+ * Returns the set of flagged customer ids. The merchant targets these for referral/UGC outreach.
+ */
+export async function computeAdvocates(storeId: string): Promise<Set<string>> {
+  const rows = await prisma.$queryRaw<{ customerId: string; gifts: bigint; suppressed: boolean; orders: number; tenureDays: number }[]>`
+    SELECT c.id AS "customerId",
+           (SELECT count(*) FROM "Order" o WHERE o."customerId" = c.id AND o."isGift") AS "gifts",
+           EXISTS(SELECT 1 FROM "CustomerIngredientSuppression" s WHERE s."customerId" = c.id) AS "suppressed",
+           c."orderCount" AS "orders",
+           (EXTRACT(EPOCH FROM (now() - c."createdAt")) / 86400)::int AS "tenureDays"
+    FROM "Customer" c
+    WHERE c."storeId" = ${storeId}`;
+  const flagged = new Set<string>();
+  for (const r of rows) {
+    if (r.suppressed) continue;                               // had an adverse reaction — not an advocate
+    if (Number(r.gifts) < 1) continue;                        // the differentiator: buys for others
+    if (r.orders < ADVOCATE_MIN_ORDERS) continue;             // established repeat customer
+    if ((r.tenureDays ?? 0) < ADVOCATE_MIN_TENURE_DAYS) continue;
+    flagged.add(r.customerId);
+  }
+  return flagged;
+}
+
+// ── Seasonal formulation shift (R25) ──────────────────────────────────────────
+
+/** Month → season (Northern-hemisphere; merchants are US-based). */
+function seasonOf(month: number): "winter" | "spring" | "summer" | "fall" {
+  if (month === 11 || month === 0 || month === 1) return "winter";
+  if (month >= 2 && month <= 4) return "spring";
+  if (month >= 5 && month <= 7) return "summer";
+  return "fall";
+}
+
+/**
+ * Per customer, the texture ("rich"/"light") they historically favour in the UPCOMING season, so the
+ * merchant can nudge the seasonal switch ahead of time (richer creams in winter, lighter gels in
+ * summer). Looks only at prior-season occurrences (older than 60 days) with a known product texture;
+ * needs ≥2 such purchases and a strict majority. Gifts excluded. Empty when no seasonal pattern.
+ */
+export async function computeSeasonalShift(storeId: string): Promise<Map<string, string>> {
+  const rows = await prisma.$queryRaw<{ customerId: string; texture: string; createdAt: Date }[]>`
+    SELECT li."customerId" AS "customerId", p."texture" AS "texture", li."createdAt" AS "createdAt"
+    FROM "OrderLineItem" li
+    JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
+    WHERE li."storeId" = ${storeId} AND NOT li."isGift" AND p."texture" IS NOT NULL`;
+  const upcoming = seasonOf(new Date(Date.now() + 30 * DAY).getUTCMonth());
+  const tally = new Map<string, { rich: number; light: number }>();
+  const cutoff = Date.now() - 60 * DAY;
+  for (const r of rows) {
+    const at = new Date(r.createdAt);
+    if (at.getTime() > cutoff) continue;                 // current-season purchase, not a prior pattern
+    if (seasonOf(at.getUTCMonth()) !== upcoming) continue;
+    const t = tally.get(r.customerId) ?? { rich: 0, light: 0 };
+    if (r.texture === "rich") t.rich += 1; else if (r.texture === "light") t.light += 1;
+    tally.set(r.customerId, t);
+  }
+  const out = new Map<string, string>();
+  for (const [cid, t] of tally) {
+    const total = t.rich + t.light;
+    if (total < 2) continue;
+    if (t.rich > t.light) out.set(cid, "rich");
+    else if (t.light > t.rich) out.set(cid, "light");       // strict majority only (ties skipped)
+  }
+  return out;
+}
+
+// ── Bundle dropout (R32) ──────────────────────────────────────────────────────
+
+const BUNDLE_LAPSE_DAYS = 90;     // no bundle purchase for this long = dropped the bundle habit
+const BUNDLE_MIN_PURCHASES = 2;   // established bundle buyer (not a one-off)
+
+/**
+ * Customers who were established bundle buyers (≥2 bundle purchases) but have stopped (last bundle
+ * ≥90 days ago) — a disrupted buying pattern worth re-engaging on the bundle/set. Gifts excluded.
+ */
+export async function computeBundleDropout(storeId: string): Promise<Set<string>> {
+  const rows = await prisma.$queryRaw<{ customerId: string; cnt: bigint; lastAt: Date }[]>`
+    SELECT li."customerId" AS "customerId", count(*) AS "cnt", MAX(li."createdAt") AS "lastAt"
+    FROM "OrderLineItem" li
+    JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
+    WHERE li."storeId" = ${storeId} AND NOT li."isGift" AND p."isBundle"
+    GROUP BY li."customerId"`;
+  const now = Date.now();
+  const flagged = new Set<string>();
+  for (const r of rows) {
+    if (Number(r.cnt) < BUNDLE_MIN_PURCHASES) continue;
+    if ((now - new Date(r.lastAt).getTime()) / DAY >= BUNDLE_LAPSE_DAYS) flagged.add(r.customerId);
+  }
+  return flagged;
+}
+
+// ── Reformulation watch (R31, product-level) ──────────────────────────────────
+
+const REFORM_WINDOW_DAYS = 90;     // recent vs prior window length
+const REFORM_MIN_RECENT = 5;       // need enough recent volume to trust the rate
+const REFORM_RATE_JUMP = 0.15;     // recent return-rate must exceed prior by this much
+const REFORM_MIN_RECENT_RATE = 0.2; // …and be materially high on its own
+
+/**
+ * Products whose return rate has jumped recently vs the prior window — a possible reformulation (or
+ * batch issue) hurting satisfaction. Product-level (not per-customer): compares refunded-order share
+ * of each product's purchases in the last 90 days against the preceding 90. Returns flagged product ids.
+ * Needs minimum recent volume so a couple of returns on a low-volume SKU don't trip it.
+ */
+export async function computeReformulationWatch(storeId: string): Promise<Set<string>> {
+  const rows = await prisma.$queryRaw<{ productId: string; rN: bigint; rRef: bigint; pN: bigint; pRef: bigint }[]>`
+    SELECT li."productId" AS "productId",
+      count(*) FILTER (WHERE o."createdAt" >= now() - make_interval(days => ${REFORM_WINDOW_DAYS}::int)) AS "rN",
+      count(*) FILTER (WHERE o."createdAt" >= now() - make_interval(days => ${REFORM_WINDOW_DAYS}::int) AND o."refunded") AS "rRef",
+      count(*) FILTER (WHERE o."createdAt" <  now() - make_interval(days => ${REFORM_WINDOW_DAYS}::int)
+                         AND o."createdAt" >= now() - make_interval(days => ${REFORM_WINDOW_DAYS * 2}::int)) AS "pN",
+      count(*) FILTER (WHERE o."createdAt" <  now() - make_interval(days => ${REFORM_WINDOW_DAYS}::int)
+                         AND o."createdAt" >= now() - make_interval(days => ${REFORM_WINDOW_DAYS * 2}::int) AND o."refunded") AS "pRef"
+    FROM "OrderLineItem" li
+    JOIN "Order" o ON o.id = li."orderId"
+    WHERE li."storeId" = ${storeId}
+    GROUP BY li."productId"`;
+  const flagged = new Set<string>();
+  for (const r of rows) {
+    const rN = Number(r.rN), pN = Number(r.pN);
+    if (rN < REFORM_MIN_RECENT || pN === 0) continue;
+    const recentRate = Number(r.rRef) / rN;
+    const priorRate = Number(r.pRef) / pN;
+    if (recentRate >= REFORM_MIN_RECENT_RATE && recentRate - priorRate >= REFORM_RATE_JUMP) flagged.add(r.productId);
+  }
+  return flagged;
+}
+
 // ── Skin-introduction hold ──────────────────────────────────────────────────
 
 /**

@@ -301,6 +301,25 @@ const SHADE_BLACKLIST = [
   "value", "subscription", "gift", "trial", "size", "default title",
 ];
 
+/** Formulation-weight keywords (R25 seasonal). "light" checked first so "oil-free" never reads as rich. */
+const LIGHT_TEXTURE = ["oil-free", "oil free", "gel", "water", "fluid", "lotion", "essence", "lightweight", "light ", "mattifying", "watery", "milk"];
+const RICH_TEXTURE = ["balm", "butter", "cream", "ointment", "salve", "rich", "nourish", "intense", "barrier repair", "oil"];
+
+/** Deterministic formulation weight from a product's text: "rich" | "light" | null. */
+export function classifyTexture(text: string | null | undefined): "rich" | "light" | null {
+  if (!text) return null;
+  const s = text.toLowerCase();
+  if (LIGHT_TEXTURE.some((k) => s.includes(k))) return "light";
+  if (RICH_TEXTURE.some((k) => s.includes(k))) return "rich";
+  return null;
+}
+
+/** True when a product's text marks it as a multi-item bundle/set/kit (R32). Word-boundary to avoid "sunset". */
+const BUNDLE_RE = /\b(bundle|kit|set|duo|trio|combo|collection|regimen|routine)\b/i;
+export function detectBundle(text: string | null | undefined): boolean {
+  return !!text && BUNDLE_RE.test(text);
+}
+
 /** Raw Shopify text a product carries, fed to the extractor. */
 export interface ProductTextSource {
   title: string;
