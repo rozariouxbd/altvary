@@ -106,7 +106,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   // Product-data coverage for the completeness scorecard (skincare vertical only).
   const productStats = (skincareEnabled && store)
     ? (await prisma.$queryRaw<{ total: bigint; cat: bigint; vol: bigint; ing: bigint; pao: bigint; cost: bigint; confirmed: bigint }[]>`
-        SELECT count(*) AS total, count("category") AS cat, count("volumeMl") AS vol,
+        SELECT count(*) AS total, count("category") AS cat, count(COALESCE("sizeValue", "volumeMl")) AS vol,
                count(*) FILTER (WHERE array_length(ingredients, 1) > 0) AS ing,
                count("paoDays") AS pao, count("cost") AS cost, count("metaConfirmedAt") AS confirmed
         FROM "Product" WHERE "storeId" = ${store.id}`)[0]

@@ -230,11 +230,11 @@ def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP,
             return f"sim-{tag}-p-{sku}"
         prows = [(
             pid(p.sku), sid, pid(p.sku), p.title, p.sku, float(p.price), 100, "active",
-            float(p.volume_ml), p.category, int(p.pao_days), list(p.ingredients), float(p.cost), p.skin_concern,
+            float(p.volume_ml), "ml", p.category, int(p.pao_days), list(p.ingredients), float(p.cost), p.skin_concern,
         ) for p in CATALOG]
         execute_values(cur,
-            'INSERT INTO "Product" (id,"storeId","productId",title,sku,price,"inventoryQty",status,"volumeMl",category,"paoDays",ingredients,cost,"skinConcern") '
-            'VALUES %s ON CONFLICT (id) DO UPDATE SET "volumeMl"=EXCLUDED."volumeMl", category=EXCLUDED.category, '
+            'INSERT INTO "Product" (id,"storeId","productId",title,sku,price,"inventoryQty",status,"sizeValue","sizeUnit",category,"paoDays",ingredients,cost,"skinConcern") '
+            'VALUES %s ON CONFLICT (id) DO UPDATE SET "sizeValue"=EXCLUDED."sizeValue", "sizeUnit"=EXCLUDED."sizeUnit", category=EXCLUDED.category, '
             '"paoDays"=EXCLUDED."paoDays", ingredients=EXCLUDED.ingredients, cost=EXCLUDED.cost, "skinConcern"=EXCLUDED."skinConcern"', prows)
         # Order line items — one row per basket item (items_json), so multi-product baskets feed
         # exhaustion / routine gaps / margin / suppression. Falls back to the lead sku for old

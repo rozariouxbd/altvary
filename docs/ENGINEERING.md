@@ -235,6 +235,24 @@ SMTP (needs a sending domain).
   round-trip not exercised here (needs a merchant Klaviyo key + auth session); all Klaviyo calls
   are best-effort/non-fatal so an unconfigured or failing Klaviyo never blocks orders or scoring.
 
+### 2026-06-18 — Beauty taxonomy expansion: size units/count + shade + makeup/hair/body · branch `beauty-taxonomy`
+- **Why.** The product model assumed fluid ml + skincare-only categories, so capsules/patches (consumed
+  by count) got wrong exhaustion timing, makeup had no shade, and makeup/hair/body had no category.
+- **What.** Schema: `Product.sizeValue` (clean numeric, replaces overloaded volumeMl), `sizeUnit`
+  (ml/oz/g/pcs, native — oz NOT normalized at ingest), `shade`. Migration `add_product_sizevalue_unit_shade`
+  copies volumeMl→sizeValue/'ml'; volumeMl deprecated (reads use COALESCE(sizeValue,volumeMl)).
+  `lib/skincare.ts`: `parseSize` (native unit; count tokens → pcs), vertical-tagged `CATEGORY_RULES`
+  (Skincare/Makeup/Hair/Body incl. Oil/Balm + Lip Care; routineStep skincare-only), per-unit usage
+  tables (CATEGORY_USAGE_G/PCS; oz default derived from ml so math stays native), unit-aware
+  `lifespanDays(sizeValue, sizeUnit, …)`, `SHADE_BLACKLIST`, `suggestProductMetadata` → sizeValue/
+  sizeUnit/shade with a makeup-only shade heuristic. exhaustion.ts selects COALESCE sizeValue+sizeUnit.
+  Co-Pilot table: size number + unit dropdown, grouped category `<optgroup>`s by vertical, shade column;
+  approve persists the new fields. Settings completeness + simulator switched to sizeValue.
+- **Verification.** `tsc` + `next build` clean. Extractor sanity: "60PC"→60 pcs, "1.7 oz"→1.7 oz native,
+  "Travel Size"→no shade (blacklist), Lipstick "Ruby Woo"→shade, Squalane→"Oil / Balm". Unit-aware
+  lifespan: 60 pcs ÷ 1/day = 60 days (the capsule fix); 1.7 oz Moisturizer ≈ 46 days.
+- **Out of scope:** makeup same-shade cross-sell play + `altvary_shade` Klaviyo prop (deferred).
+
 ### 2026-06-18 — AI Co-Pilot → Product Data Hub (Confirmed tab) · branch `copilot-hub`
 - **Why.** The Co-Pilot only listed *unconfirmed* products, so once a SKU was approved there was no
   place to view or edit its skincare metadata (Inventory shows only stock). Rather than a new

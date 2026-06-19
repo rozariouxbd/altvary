@@ -112,10 +112,16 @@ model Product {
   price        Float   @default(0)
   inventoryQty Int     @default(0)
   status       String?
-  // Skincare metadata (from metafield mapping)
-  volumeMl     Float?      // net contents, ml (drives exhaustion windows)
-  dailyUsageMl Float?      // est. usage/day; falls back to a category default in code
-  category     String?     // cleanser / serum / moisturizer / sunscreen / …
+  // Skincare/beauty metadata (from the AI Co-Pilot or metafield mapping)
+  // Size = capacity in sizeUnit (ml / oz / g / pcs). sizeValue is the canonical numeric size;
+  // volumeMl is DEPRECATED (kept for back-compat, migrated into sizeValue) — read via
+  // COALESCE(sizeValue, volumeMl). dailyUsageMl is est. usage/day in sizeUnit (category default in code).
+  volumeMl     Float?      // DEPRECATED — superseded by sizeValue (ml-era data lives here)
+  sizeValue    Float?      // net contents in sizeUnit (drives exhaustion windows)
+  sizeUnit     String?     // ml | oz | g | pcs (native, as the merchant entered it; default ml)
+  shade        String?     // makeup shade/variant (e.g. "NC20", "Ruby Woo"); blank for skincare
+  dailyUsageMl Float?      // est. usage/day in sizeUnit; falls back to a category default in code
+  category     String?     // cleanser / serum / foundation / mascara / shampoo / … (any vertical)
   collection   String?     // routine/collection grouping
   skinConcern  String?     // skin profile this product targets (acne / aging / …) — household profiling
   ingredients  String[]    // active ingredients / actives (for ingredient suppression — later)

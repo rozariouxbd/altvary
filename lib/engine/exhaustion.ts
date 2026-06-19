@@ -7,7 +7,8 @@ interface Row {
   customerId: string;
   productId: string;
   lastAt: Date;
-  volumeMl: number;
+  sizeValue: number;
+  sizeUnit: string | null;
   category: string | null;
   dailyUsageMl: number | null;
   inventoryQty: number;
@@ -24,7 +25,7 @@ export interface Replenishment {
 function reduceRows(rows: Row[]): Map<string, Replenishment> {
   const soonest = new Map<string, { ms: number; oos: boolean }>();
   for (const r of rows) {
-    const life = lifespanDays(r.volumeMl, r.category, r.dailyUsageMl);
+    const life = lifespanDays(r.sizeValue, r.sizeUnit, r.category, r.dailyUsageMl);
     if (life == null) continue;
     const ms = new Date(r.lastAt).getTime() + life * DAY;
     const cur = soonest.get(r.customerId);
@@ -47,15 +48,16 @@ export async function computeReplenishment(storeId: string): Promise<Map<string,
   const rows = await prisma.$queryRaw<Row[]>`
     SELECT li."customerId" AS "customerId", li."productId" AS "productId",
            MAX(li."createdAt") AS "lastAt",
-           p."volumeMl" AS "volumeMl", p."category" AS "category", p."dailyUsageMl" AS "dailyUsageMl",
+           COALESCE(p."sizeValue", p."volumeMl") AS "sizeValue", p."sizeUnit" AS "sizeUnit",
+           p."category" AS "category", p."dailyUsageMl" AS "dailyUsageMl",
            p."inventoryQty" AS "inventoryQty"
     FROM "OrderLineItem" li
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
-    WHERE li."storeId" = ${storeId} AND p."volumeMl" IS NOT NULL AND p."volumeMl" > 0
+    WHERE li."storeId" = ${storeId} AND COALESCE(p."sizeValue", p."volumeMl") > 0
       AND NOT EXISTS (
         SELECT 1 FROM "CustomerIngredientSuppression" s
         WHERE s."customerId" = li."customerId" AND s.ingredient = ANY(p."ingredients"))
-    GROUP BY li."customerId", li."productId", p."volumeMl", p."category", p."dailyUsageMl", p."inventoryQty"`;
+    GROUP BY li."customerId", li."productId", COALESCE(p."sizeValue", p."volumeMl"), p."sizeUnit", p."category", p."dailyUsageMl", p."inventoryQty"`;
   return reduceRows(rows);
 }
 
@@ -66,16 +68,17 @@ export async function computeReplenishmentForCustomer(
   const rows = await prisma.$queryRaw<Row[]>`
     SELECT li."customerId" AS "customerId", li."productId" AS "productId",
            MAX(li."createdAt") AS "lastAt",
-           p."volumeMl" AS "volumeMl", p."category" AS "category", p."dailyUsageMl" AS "dailyUsageMl",
+           COALESCE(p."sizeValue", p."volumeMl") AS "sizeValue", p."sizeUnit" AS "sizeUnit",
+           p."category" AS "category", p."dailyUsageMl" AS "dailyUsageMl",
            p."inventoryQty" AS "inventoryQty"
     FROM "OrderLineItem" li
     JOIN "Product" p ON p.id = li."productId" AND p."storeId" = li."storeId"
     WHERE li."storeId" = ${storeId} AND li."customerId" = ${customerId}
-      AND p."volumeMl" IS NOT NULL AND p."volumeMl" > 0
+      AND COALESCE(p."sizeValue", p."volumeMl") > 0
       AND NOT EXISTS (
         SELECT 1 FROM "CustomerIngredientSuppression" s
         WHERE s."customerId" = li."customerId" AND s.ingredient = ANY(p."ingredients"))
-    GROUP BY li."customerId", li."productId", p."volumeMl", p."category", p."dailyUsageMl", p."inventoryQty"`;
+    GROUP BY li."customerId", li."productId", COALESCE(p."sizeValue", p."volumeMl"), p."sizeUnit", p."category", p."dailyUsageMl", p."inventoryQty"`;
   return reduceRows(rows).get(customerId) ?? null;
 }
 
