@@ -47,36 +47,42 @@ const SECTIONS: { label: string; items: RecItem[] }[] = [
   {
     label: "Skin Intelligence",
     items: [
-      { id: 20, code: "R20", name: "Routine completion gap", hint: "Coming soon", soon: true, desc: "Detects incomplete skincare routines and recommends the missing step." },
-      { id: 21, code: "R21", name: "Skin type loyalty flag", hint: "Coming soon", soon: true, desc: "Flags loyalty patterns by skin type for targeted retention." },
-      { id: 22, code: "R22", name: "Product finish-rate clock", hint: "Coming soon", soon: true, desc: "Estimates when a product runs out from usage rate, timing the replenishment nudge." },
-      { id: 23, code: "R23", name: "Active ingredient dropout", hint: "Coming soon", soon: true, desc: "Spots customers who stopped buying a key active ingredient." },
-      { id: 24, code: "R24", name: "Gift purchase detection", hint: "Coming soon", soon: true, desc: "Separates gift purchases from personal use so scoring isn't skewed." },
-      { id: 25, code: "R25", name: "Seasonal formulation shift", hint: "Coming soon", soon: true, desc: "Anticipates seasonal switches between formulations." },
-      { id: 26, code: "R26", name: "Explorer vs loyalist", hint: "Coming soon", soon: true, desc: "Classifies customers by exploration vs loyalty behaviour." },
+      { id: 20, code: "R20", name: "Routine completion gap", hint: "Live", desc: "Detects incomplete skincare routines and recommends the missing step." },
+      { id: 21, code: "R21", name: "Skin type loyalty flag", hint: "Live", desc: "Flags loyalty patterns by skin type for targeted retention." },
+      { id: 22, code: "R22", name: "Product finish-rate clock", hint: "Live", desc: "Estimates when a product runs out from usage rate, timing the replenishment nudge." },
+      { id: 23, code: "R23", name: "Active ingredient dropout", hint: "Live", desc: "Spots customers who stopped buying a key active ingredient." },
+      { id: 24, code: "R24", name: "Gift purchase detection", hint: "Live", desc: "Separates gift purchases from personal use so scoring isn't skewed." },
+      { id: 25, code: "R25", name: "Seasonal formulation shift", hint: "Live", desc: "Anticipates seasonal switches between formulations." },
+      { id: 26, code: "R26", name: "Explorer vs loyalist", hint: "Live", desc: "Classifies customers by exploration vs loyalty behaviour." },
     ],
   },
   {
     label: "Advocacy & Recovery",
     items: [
-      { id: 27, code: "R27", name: "Post-purchase reaction risk", hint: "Coming soon", soon: true, desc: "Predicts adverse-reaction risk to pre-empt returns and bad reviews." },
-      { id: 28, code: "R28", name: "Routine vs product dropout", hint: "Coming soon", soon: true, desc: "Distinguishes dropping a single product from abandoning a whole routine." },
-      { id: 29, code: "R29", name: "Creator LTV divergence", hint: "Coming soon", soon: true, desc: "Compares LTV across acquisition creators to find the best partners." },
-      { id: 30, code: "R30", name: "Brand advocate finder", hint: "Coming soon", soon: true, desc: "Surfaces your most likely advocates for referral and UGC outreach." },
-      { id: 31, code: "R31", name: "Reformulation early warning", hint: "Coming soon", soon: true, desc: "Early signal that a reformulation is hurting repeat rate." },
-      { id: 32, code: "R32", name: "Bundle disruption signal", hint: "Coming soon", soon: true, desc: "Detects when a bundle change disrupts established buying patterns." },
+      { id: 27, code: "R27", name: "Post-purchase reaction risk", hint: "Live", desc: "Predicts adverse-reaction risk to pre-empt returns and bad reviews." },
+      { id: 28, code: "R28", name: "Routine vs product dropout", hint: "Live", desc: "Distinguishes dropping a single product from abandoning a whole routine." },
+      { id: 29, code: "R29", name: "Creator LTV divergence", hint: "Live", desc: "Compares LTV across acquisition creators to find the best partners." },
+      { id: 30, code: "R30", name: "Brand advocate finder", hint: "Live", desc: "Surfaces your most likely advocates for referral and UGC outreach." },
+      { id: 31, code: "R31", name: "Reformulation early warning", hint: "Live", desc: "Early signal that a reformulation is hurting repeat rate." },
+      { id: 32, code: "R32", name: "Bundle disruption signal", hint: "Live", desc: "Detects when a bundle change disrupts established buying patterns." },
     ],
   },
 ];
 
 const ALL = SECTIONS.flatMap((s) => s.items);
 const LIVE_CODES = new Set(["R02", "R04", "R05", "R07", "R08"]);
+// Skin Intelligence + Advocacy & Recovery — all now backed by real engine logic, shipped behind the
+// SKINCARE_FEATURES flag (delivered as arbitrated plays + Klaviyo segmentation props, not a candidate
+// list page). Kept as its own set since these catalog R-numbers differ from the engine's internal ids.
+const SKINCARE_LIVE = new Set([
+  "R20", "R21", "R22", "R23", "R24", "R25", "R26", "R27", "R28", "R29", "R30", "R31", "R32",
+]);
 
 function badgeFor(it: RecItem) {
   if (it.soon) return <span className="tag" style={{ background: "var(--card-2)", color: "var(--muted)" }}>Coming soon</span>;
   if (it.code === "R11") return <span className="tag warn">Pro plan</span>;
   if (it.code === "R09" || it.code === "R10") return <span className="tag" style={{ background: "rgba(79,115,255,.1)", color: "var(--accent-ink)" }}>Growth plan</span>;
-  if (LIVE_CODES.has(it.code)) return <span className="tag pos">Live</span>;
+  if (LIVE_CODES.has(it.code) || SKINCARE_LIVE.has(it.code)) return <span className="tag pos">Live</span>;
   return <span className="tag acc">Active</span>;
 }
 
@@ -93,7 +99,7 @@ export default function EngineCatalogPage() {
         <aside style={{ width: 240, flexShrink: 0, borderRight: "1px solid var(--line)", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--card)" }}>
           <div style={{ padding: "14px 16px 10px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>32 intelligence types</div>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>5 layers · 5 live now</div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>5 layers · {LIVE_CODES.size + SKINCARE_LIVE.size} live now</div>
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
             {SECTIONS.map((sec) => (
@@ -137,6 +143,11 @@ export default function EngineCatalogPage() {
             <Link href={`/recommendations/${sel.code.toLowerCase()}`} className="btn btn-primary btn-sm">
               <i className="ti ti-arrow-right"></i> View live candidates
             </Link>
+          ) : SKINCARE_LIVE.has(sel.code) ? (
+            <div className="note note-acc" style={{ maxWidth: 600 }}>
+              <i className="ti ti-sparkles"></i>
+              <span>Live in the Skin Intelligence suite — computed each scoring run from your product + order data and delivered to your flows (Klaviyo segments / recommendation queues).</span>
+            </div>
           ) : sel.soon ? (
             <div className="note" style={{ maxWidth: 600 }}>
               <i className="ti ti-flask"></i>
