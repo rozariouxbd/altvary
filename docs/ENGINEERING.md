@@ -37,7 +37,26 @@ tenant from the session. RLS is enabled in Postgres; Prisma connects as owner.
   snapshot, prunes old history, and writes a monthly `SegmentSnapshot`.
 - `signals.ts` `computeSignals` — per-customer order-derived signals (repurchase `cycleDays`,
   `daysSinceLastOrder`, `scoreDrop7d`) used by plays and dashboards.
-- `plays/` — `PlayDefinition`s (R02 winback, R04, R05, R07, R08) evaluated against signals.
+- `plays/` — `PlayDefinition`s evaluated against the scored snapshot: the **core** RFME plays
+  (R02 winback, R04 VIP score-drop, R05 repurchase, R07 first-order, R08 cross-sell) plus the
+  **skincare suite** behind `SKINCARE_FEATURES_ENABLED` (R06 exhaustion, R09 routine-gap, R10 PAO
+  freshness, R11 margin, R12 intro-hold, R13 household, R23 active dropout, R28 routine dropout +
+  segmentation flags R21/R24/R25/R26/R27/R29/R30/R31). Skincare consumption signals live in
+  `exhaustion.ts`; products + ingredients/category/size metadata come from the AI Co-Pilot.
+- `priority.ts` `resolveActivePlay` — **Waterfall arbitration**: one `Customer.activePlay` per
+  customer (safety > brand-protection > commercial), so flows never compete. The single source of
+  truth for the Decision Layer's dedupe.
+
+**Decision Layer** (`lib/engine/decisions.ts`). The product's core surface: `buildDecisions`
+collapses every play into ONE decision per customer (Who · Why · Product · Offer · Channel ·
+Message · Expected Revenue · explainable Confidence), ranked by revenue × confidence, rendered on
+**`/today`**. A computed projection — not persisted.
+
+**Outcome Intelligence** (`Action` model + `orders/create` webhook). Sending a decision writes an
+`Action` (state machine: exported → converted → expired); a Shopify purchase inside the attribution
+window marks it converted with attributed revenue (30-day last-touch *influenced*, gifts excluded).
+The Reports performance section computes recovery rate / revenue-per-rec / precision, which calibrates
+future confidence.
 
 **Shopify integration** (`lib/shopify.ts`). OAuth auth-code install → encrypted offline token
 → backfill (customers/orders/products) → webhooks (data + GDPR). HMAC-verified.
@@ -152,6 +171,50 @@ Before promoting to **`1.0.0`** (non-code): Shopify **compliance webhook URLs** 
 SMTP (needs a sending domain).
 
 ---
+
+### 2026-06-20 — Land on Today; rename Dashboard → Overview · `ddfa8de`
+- **What.** Post-login + root redirects now point to `/today` (the decision queue), not `/dashboard`.
+  Renamed the "Dashboard" nav item / page to **"Overview"** (route `/dashboard` unchanged) so it no
+  longer competes with Today as "the main screen."
+- **Why.** The daily user (CRM/retention manager) opens the app to act, not to read a health report;
+  the decision engine should open on the decision surface. *Verified:* tsc + next build clean.
+
+### 2026-06-20 — Decision Layer + Outcome Intelligence (MVP) · `40b8989`
+- **What.** Repositioned from 32 surfaced recommendations to ONE decision per customer.
+  - `lib/engine/decisions.ts` `buildDecisions`: aggregates `evaluateAll`, dedupes per customer
+    (arbitrated `activePlay` → else top `expectedValue`), excludes open/cooldown Actions, enriches
+    with the schema (Who/Why/Product/Offer/Channel/Message/ExpectedRevenue/Confidence), ranks by
+    revenue × confidence. `computeConfidence → {score, calibrated, factors[]}` — explainable,
+    provisional until 30 outcomes. `lib/engine/why.ts` extracted (shared `signalText`).
+  - **State machine** Pending → Exported → Converted → Expired on `Action` (new `status`,
+    `expectedRevenue`, `confidence`, `windowDays`, `productId`, `revenue` + index; migration
+    `add_action_lifecycle_fields`; **no Decision table** — computed projection per CEO refinement).
+  - **Outcome loop**: `markDecisionsSent` + `orders/create` purchase attribution (30-day last-touch,
+    gifts excluded, idempotent) + `expireStaleActions` sweep. Performance section on Reports
+    (recovery rate / revenue-per-rec / precision) feeds confidence calibration.
+  - **`/today`** page (Daily Revenue Opportunities) leads the nav; honesty guardrails surfaced
+    (provisional confidence; "influenced" not "recovered/caused" revenue).
+- *Verified:* tsc + next build clean; route live. Reads thin until a store has order line items.
+
+### 2026-06-19 — Catalog reconcile: mark Skin Intelligence + Advocacy plays Live · `3479398`
+- Flipped R20–R32 in the marketing Engine catalog from "Coming soon" to Live (all now have real
+  engine backing). `SKINCARE_LIVE` badges them; catalog R-numbers intentionally differ from internal
+  play ids (see [[catalog-engine-numbering]]). *Verified:* tsc + build clean.
+
+### 2026-06-19 — R25/R29/R30/R31/R32 data sources + plays · `3468494`
+- Deterministic data sources (no third-party integrations): `Product.texture` (rich/light) +
+  `Product.isBundle` (derived at ingest); `Order.acquisitionSource` (discount code / landing_site
+  UTM). Plays (segmentation flags + Klaviyo props, Waterfall untouched): R29 creator attribution,
+  R30 brand advocate, R25 seasonal shift, R32 bundle dropout, R31 reformulation watch (product-level).
+  Migration `add_sources_r25_r29_r30_r31_r32`. *Verified:* tsc + build + synthetic SQL.
+
+### 2026-06-19 — Skin-intelligence plays R23/R24/R26/R21/R28/R27 · `66faaa1`→`9f28ba9`
+- **R23** active-ingredient dropout (arbitrated win-back) · **R24** gift detection (data-quality
+  filter — gifts excluded from all consumption computes; `Order.isGift`/`OrderLineItem.isGift`) ·
+  **R26** explorer/loyalist persona · **R21** skin-type loyalty · **R28** routine dropout (arbitrated
+  win-back) · **R27** reaction risk (predictive, advisory). Each: schema + engine compute + scoring
+  persist + `altvary_*` Klaviyo prop; arbitrated ones added to `priority.ts`. *Verified:* tsc + build
+  + synthetic SQL per play.
 
 ### 2026-06-15 — Klaviyo sync mode (auto vs manual) + on-demand Sync now · `864c121`
 - **What.** Merchants can now turn off continuous Klaviyo sync. New `Store.klaviyoSyncMode`
