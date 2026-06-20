@@ -276,6 +276,10 @@ model Order {
   store       Store    @relation(fields: [storeId], references: [id])
   customer    Customer @relation(fields: [customerId], references: [id])
   lineItems   OrderLineItem[]
+
+  // computeSignals scans all of a store's orders ordered by (customer, date); recomputeAggregates +
+  // attribution filter by (storeId, customerId). This composite covers both (Order had no index).
+  @@index([storeId, customerId, createdAt])
 }
 
 // One row per product variant per order — which products were in which order.

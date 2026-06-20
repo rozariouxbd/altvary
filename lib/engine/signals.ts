@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "../prisma";
 import type { CustomerSignal } from "./types";
 
@@ -73,7 +74,8 @@ async function computeScoreDrops(
   return out;
 }
 
-export async function computeSignals(
+/** Per-request memoized (React cache): multiple pages/plays in one render share one computation. */
+export const computeSignals = cache(async function computeSignals(
   storeId: string
 ): Promise<Map<string, CustomerSignal>> {
   const [orders, scoreDrops] = await Promise.all([
@@ -119,4 +121,4 @@ export async function computeSignals(
   }
 
   return out;
-}
+});
