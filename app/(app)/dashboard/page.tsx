@@ -7,7 +7,7 @@ import { evaluateAll } from "../../../lib/engine/evaluate";
 import { buildDecisions } from "../../../lib/engine/decisions";
 import type { Customer } from "@prisma/client";
 
-export const metadata = { title: "Dashboard — Altvary" };
+export const metadata = { title: "Overview — Altvary" };
 
 const SEG_ORDER = ["vip", "returning", "at_risk", "churning", "lost"] as const;
 const SEG_META: Record<string, { cls: string; label: string; range: string }> = {
@@ -57,7 +57,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <Topbar title="Dashboard" sub={`Live · ${total.toLocaleString()} customers`} search="Search customers, SKUs, recommendations…" cta={{ icon: "ti-refresh", label: "Sync from Shopify", href: "/api/shopify/sync?return=/dashboard" }} />
+      <Topbar title="Overview" sub={`Live · ${total.toLocaleString()} customers`} search="Search customers, SKUs, recommendations…" cta={{ icon: "ti-refresh", label: "Sync from Shopify", href: "/api/shopify/sync?return=/dashboard" }} />
 
       <main className="page">
         {sp.notice === "sync-started" && (
@@ -76,7 +76,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
         <div className="page-head">
           <div>
-            <h1 className="page-title">Dashboard</h1>
+            <h1 className="page-title">Overview</h1>
             <p className="page-sub">Retention at a glance for {storeName}.</p>
           </div>
           <div className="page-head-actions">

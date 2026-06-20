@@ -10,7 +10,7 @@ async function signIn(formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) redirect(`/login?error=${encodeURIComponent(error.message)}`);
-  redirect("/dashboard");
+  redirect("/today");
 }
 
 async function signUp(formData: FormData) {
@@ -21,7 +21,7 @@ async function signUp(formData: FormData) {
   const { data, error } = await supabase.auth.signUp({ email, password });
   if (error) redirect(`/login?error=${encodeURIComponent(error.message)}`);
   if (!data.session) redirect("/login?notice=confirm");
-  redirect("/dashboard");
+  redirect("/today");
 }
 
 async function sendMagicLink(formData: FormData) {
