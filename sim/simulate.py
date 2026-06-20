@@ -432,8 +432,8 @@ def drive_refunds(shop: str, url: str, count: int, dry_run: bool) -> None:
         except Exception as e:
             bad += 1
             print(f"  ! {order_id}: {e}")
-    print(f"[refunds] '{shop}': posted {len(targets)} refund webhooks → {ok} ok, {bad} failed"
-          + (" (dry-run)" if dry_run else f". Run scoring or check CustomerIngredientSuppression."))
+    print(f"[refunds] '{shop}': posted {len(targets)} refund webhooks -> {ok} ok, {bad} failed"
+          + (" (dry-run)" if dry_run else ". Run scoring or check CustomerIngredientSuppression."))
 
 
 # --------------------------------------------------------------------------- modes
