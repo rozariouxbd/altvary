@@ -25,7 +25,7 @@ async function updateSchedule(formData: FormData) {
   if (!store) redirect("/settings");
   const schedule = String(formData.get("schedule") ?? "").trim();
   if (schedule) await prisma.store.update({ where: { id: store.id }, data: { scoringSchedule: schedule } });
-  redirect("/settings?notice=saved");
+  redirect("/settings?tab=general&notice=saved");
 }
 
 async function recomputeNow() {
@@ -48,13 +48,13 @@ async function updateWeights(formData: FormData) {
   const wM = clamp(formData.get("wM"));
   const wE = clamp(formData.get("wE"));
   // All-zero can't be normalized — reject rather than silently default.
-  if (wR + wF + wM + wE === 0) redirect("/settings?notice=weights-invalid");
+  if (wR + wF + wM + wE === 0) redirect("/settings?tab=scoring&notice=weights-invalid");
   await prisma.scoringConfig.upsert({
     where: { storeId: store.id },
     create: { storeId: store.id, wR, wF, wM, wE },
     update: { wR, wF, wM, wE },
   });
-  redirect("/settings?notice=weights-saved");
+  redirect("/settings?tab=scoring&notice=weights-saved");
 }
 
 async function connectKlaviyo(formData: FormData) {
@@ -62,18 +62,18 @@ async function connectKlaviyo(formData: FormData) {
   const store = await getCurrentStore();
   if (!store) redirect("/settings");
   const rawKey = String(formData.get("klaviyoApiKey") ?? "").trim();
-  if (!rawKey) redirect("/settings?notice=klaviyo-invalid");
+  if (!rawKey) redirect("/settings?tab=integrations&notice=klaviyo-invalid");
   // Validate the key against Klaviyo before storing it, so we never persist a dud.
-  if (!(await verifyKey(rawKey))) redirect("/settings?notice=klaviyo-invalid");
+  if (!(await verifyKey(rawKey))) redirect("/settings?tab=integrations&notice=klaviyo-invalid");
   await setStoreKlaviyoKey(store.id, rawKey);
-  redirect("/settings?notice=klaviyo-connected");
+  redirect("/settings?tab=integrations&notice=klaviyo-connected");
 }
 
 async function disconnectKlaviyo() {
   "use server";
   const store = await getCurrentStore();
   if (store) await clearStoreKlaviyoKey(store.id);
-  redirect("/settings?notice=klaviyo-disconnected");
+  redirect("/settings?tab=integrations&notice=klaviyo-disconnected");
 }
 
 async function setKlaviyoMode(formData: FormData) {
@@ -82,17 +82,17 @@ async function setKlaviyoMode(formData: FormData) {
   if (!store) redirect("/settings");
   const mode = String(formData.get("mode") ?? "auto") === "manual" ? "manual" : "auto";
   await prisma.store.update({ where: { id: store.id }, data: { klaviyoSyncMode: mode } });
-  redirect("/settings?notice=klaviyo-mode");
+  redirect("/settings?tab=integrations&notice=klaviyo-mode");
 }
 
 async function syncKlaviyoNow() {
   "use server";
   const store = await getCurrentStore();
   if (store) await syncStoreNow(store).catch(() => {});
-  redirect("/settings?notice=klaviyo-synced");
+  redirect("/settings?tab=integrations&notice=klaviyo-synced");
 }
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ notice?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ notice?: string; tab?: string }> }) {
   const sp = await searchParams;
   const skincareEnabled = process.env.SKINCARE_FEATURES_ENABLED === "true";
   const store = await getCurrentStore();
@@ -122,6 +122,19 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const trialDaysLeft = store ? Math.max(0, Math.ceil((store.trialEndsAt.getTime() - Date.now()) / 86_400_000)) : 0;
   const storeName = store ? prettyStore(store.shopDomain) : "—";
 
+  // URL-driven tabs (server component — no client island needed). Product-data tab only when the
+  // skincare vertical is on.
+  const TABS = [
+    { id: "general", label: "General", icon: "ti-building-store" },
+    { id: "scoring", label: "Scoring", icon: "ti-adjustments" },
+    { id: "integrations", label: "Integrations", icon: "ti-plug" },
+    ...(skincareEnabled ? [{ id: "products", label: "Product data", icon: "ti-flask" }] : []),
+    { id: "data", label: "Data & privacy", icon: "ti-shield-lock" },
+  ];
+  const tab = TABS.some((t) => t.id === sp.tab) ? sp.tab! : "general";
+  const gridStyle = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, alignItems: "start" } as const;
+  const soloStyle = { maxWidth: 720 } as const;
+
   return (
     <>
       <Topbar title="Settings" sub="Plan · scoring · store config" search="Search settings…" />
@@ -133,7 +146,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <div className="page-head">
           <div>
             <h1 className="page-title">Settings</h1>
-            <p className="page-sub">Scoring runs on the schedule below — or trigger a recompute now.</p>
+            <p className="page-sub">Plan, scoring, integrations, and data — or trigger a recompute now.</p>
           </div>
           <form action={recomputeNow}>
             <button type="submit" className="btn btn-primary btn-sm"><i className="ti ti-refresh" /> Recompute now</button>
@@ -150,7 +163,17 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         {sp.notice === "klaviyo-mode" && <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}><i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>Klaviyo sync mode updated.</div></div>}
         {sp.notice === "klaviyo-synced" && <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}><i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>Pushed the latest scores &amp; tiers to Klaviyo.</div></div>}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, alignItems: "start" }}>
+        {/* Tabs */}
+        <div style={{ display: "inline-flex", gap: 2, background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r-sm)", padding: 3, marginBottom: 18, flexWrap: "wrap" }}>
+          {TABS.map((t) => (
+            <a key={t.id} href={`/settings?tab=${t.id}`} style={{ padding: "7px 14px", borderRadius: 6, fontSize: 13, fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6, color: tab === t.id ? "var(--ink)" : "var(--muted)", background: tab === t.id ? "var(--card-2)" : "transparent", boxShadow: tab === t.id ? "var(--shadow)" : "none" }}>
+              <i className={`ti ${t.icon}`} /> {t.label}
+            </a>
+          ))}
+        </div>
+
+        {tab === "general" && (
+        <div style={gridStyle}>
           {/* Plan & trial */}
           <div className="card">
             <div className="card-head">
@@ -197,6 +220,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             </div>
           </div>
 
+        </div>
+        )}
+
+        {tab === "scoring" && (
+        <div style={soloStyle}>
           {/* RFME configuration (active engine) */}
           <div className="card">
             <div className="card-head"><div><div className="card-title">RFME configuration</div><div className="card-sub">Tune the scoring formula for your store</div></div><a href="/scores" className="btn btn-ghost btn-sm"><i className="ti ti-chart-histogram" /> View scores</a></div>
@@ -214,6 +242,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             </div>
           </div>
 
+        </div>
+        )}
+
+        {tab === "data" && (
+        <div style={soloStyle}>
           {/* Data & isolation */}
           <div className="card">
             <div className="card-head"><div><div className="card-title">Data &amp; isolation</div><div className="card-sub">Tenant boundary &amp; exports</div></div><span className="tag pos"><span className="dot pos"></span> Isolated</span></div>
@@ -235,6 +268,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             </div>
           </div>
 
+        </div>
+        )}
+
+        {tab === "integrations" && (
+        <div style={soloStyle}>
           {/* Klaviyo real-time sync */}
           <div className="card">
             <div className="card-head">
@@ -296,7 +334,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             </div>
           </div>
         </div>
+        )}
 
+        {tab === "products" && (
+        <>
         {/* Data completeness scorecard — the foundation the skincare plays run on */}
         {skincareEnabled && productStats && (() => {
           const n = (b: bigint) => Number(b);
@@ -359,6 +400,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <a href="/settings/mapping" className="btn btn-primary btn-sm" style={{ flexShrink: 0 }}><i className="ti ti-wand" /> Open mapping wizard</a>
           </div>
         </div>
+        )}
+        </>
         )}
 
         <div className="note" style={{ marginTop: 18 }}>
