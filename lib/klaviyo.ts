@@ -32,6 +32,11 @@ const PROP_ACQUISITION = "altvary_acquisition_source";    // creator/campaign th
 const PROP_ADVOCATE = "altvary_advocate";                 // likely brand advocate — referral/UGC target (R30)
 const PROP_SEASONAL_SHIFT = "altvary_seasonal_shift";     // predicted upcoming-season texture rich/light (R25)
 const PROP_BUNDLE_LAPSED = "altvary_bundle_lapsed";       // stopped buying bundles — re-engage on a set (R32)
+// Decision copy pushed at "Send" time so ONE Klaviyo flow can merge the recommendation:
+const PROP_PLAY_NAME = "altvary_play_name";               // human-readable play (e.g. "Product exhaustion")
+const PROP_MESSAGE = "altvary_message";                   // suggested email copy for this customer
+const PROP_OFFER = "altvary_offer";                       // suggested discount code (or none)
+const PROP_PRODUCT = "altvary_product";                   // recommended product title
 
 const DAY = 86_400_000;
 /** Margin-drop (percentage points) at or above which a customer is flagged margin-eroding. */
@@ -238,6 +243,7 @@ export async function redactProfile(store: Pick<Store, "klaviyoApiKey">, email: 
     [PROP_INTRO_HOLD]: null, [PROP_HOUSEHOLD]: null, [PROP_ACTIVE_PLAY]: null, [PROP_LAPSED_ACTIVE]: null,
     [PROP_BUYER_PERSONA]: null, [PROP_SKIN_TYPE_LOYAL]: null, [PROP_ROUTINE_LAPSED]: null, [PROP_REACTION_RISK]: null,
     [PROP_ACQUISITION]: null, [PROP_ADVOCATE]: null, [PROP_SEASONAL_SHIFT]: null, [PROP_BUNDLE_LAPSED]: null,
+    [PROP_PLAY_NAME]: null, [PROP_MESSAGE]: null, [PROP_OFFER]: null, [PROP_PRODUCT]: null,
   });
 }
 
@@ -288,6 +294,56 @@ export async function bulkSyncProfiles(store: Store, customers: SyncableCustomer
     await prisma.store.update({ where: { id: store.id }, data: { klaviyoSyncedAt: new Date() } });
   }
   return ok ? withEmail.length : 0;
+}
+
+/** One sent decision's deliverable copy for Klaviyo. */
+export interface DecisionPush {
+  email: string;
+  playId: string;       // → altvary_active_play (which email the flow sends)
+  playName: string;
+  message: string;
+  offer: string | null;
+  product: string | null;
+}
+
+/**
+ * Push sent decisions' copy onto Klaviyo profiles so a SINGLE flow can deliver every play:
+ * the flow triggers on `altvary_active_play` and merges `altvary_message`/`_offer`/`_product`.
+ * Explicit user action ("Send" on Today) — runs regardless of sync mode; bulk + best-effort.
+ * Returns the number of profiles submitted.
+ */
+export async function syncDecisions(store: Pick<Store, "klaviyoApiKey">, rows: DecisionPush[]): Promise<number> {
+  const key = getKlaviyoKey(store);
+  if (!key) return 0;
+  const profiles = rows
+    .filter((r) => r.email)
+    .map((r) => ({
+      type: "profile",
+      attributes: {
+        email: r.email,
+        properties: {
+          [PROP_ACTIVE_PLAY]: r.playId,
+          [PROP_PLAY_NAME]: r.playName,
+          [PROP_MESSAGE]: r.message,
+          [PROP_OFFER]: r.offer ?? null,
+          [PROP_PRODUCT]: r.product ?? null,
+        },
+      },
+    }));
+  if (profiles.length === 0) return 0;
+  let ok = true;
+  for (let i = 0; i < profiles.length; i += BULK_LIMIT) {
+    try {
+      const res = await klaviyoFetch(key, "/profile-bulk-import-jobs/", {
+        method: "POST",
+        body: JSON.stringify({
+          data: { type: "profile-bulk-import-job", attributes: { profiles: { data: profiles.slice(i, i + BULK_LIMIT) } } },
+        }),
+      });
+      if (!res.ok) ok = false;
+    } catch { ok = false; }
+  }
+  return ok ? profiles.length : 0;
 }
 
 /**

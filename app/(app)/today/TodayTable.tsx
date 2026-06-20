@@ -32,7 +32,11 @@ export default function TodayTable({ rows, action }: { rows: TodayRow[]; action:
   function send(rs: TodayRow[]) {
     if (!rs.length || !payloadRef.current || !formRef.current) return;
     payloadRef.current.value = JSON.stringify(
-      rs.map((r) => ({ customerId: r.customerId, playId: r.playId, expectedRevenue: r.expectedRevenue, productId: r.productId, confidence: r.confidence.score })),
+      rs.map((r) => ({
+        customerId: r.customerId, email: r.email, playId: r.playId, playName: r.playName,
+        message: r.message, offer: r.offerCode, product: r.productTitle,
+        productId: r.productId, expectedRevenue: r.expectedRevenue, confidence: r.confidence.score,
+      })),
     );
     formRef.current.requestSubmit();
   }

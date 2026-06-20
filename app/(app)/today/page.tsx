@@ -8,7 +8,11 @@ import TodayTable, { type TodayRow } from "./TodayTable";
 
 export const metadata = { title: "Today — Altvary" };
 
-interface SentRow { customerId: string; playId: string; expectedRevenue: number; productId: string | null; confidence: number }
+interface SentRow {
+  customerId: string; email: string; playId: string; playName: string;
+  message: string; offer: string | null; product: string | null;
+  productId: string | null; expectedRevenue: number; confidence: number;
+}
 
 async function markSent(formData: FormData) {
   "use server";

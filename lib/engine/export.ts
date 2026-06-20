@@ -1,7 +1,8 @@
 import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { evaluatePlay } from "./evaluate";
-import { ATTRIBUTION_WINDOW_DAYS, type Decision } from "./decisions";
+import { ATTRIBUTION_WINDOW_DAYS } from "./decisions";
+import { syncDecisions } from "../klaviyo";
 import type { Candidate, ExportColumn, PlayDefinition } from "./types";
 
 const EXPORT_LIMIT_PER_HOUR = Number(process.env.EXPORT_LIMIT_PER_HOUR ?? 10);
@@ -76,17 +77,25 @@ export async function exportPlay(
   return { csv, count: candidates.length, filename };
 }
 
-/** A decision being handed off (the fields the Action record needs). */
-type SentDecision = Pick<Decision, "playId" | "expectedRevenue" | "productId"> & {
+/** A decision being handed off (the Action record fields + the copy Klaviyo merges). */
+type SentDecision = {
   customerId: string;
+  email: string;
+  playId: string;
+  playName: string;
+  message: string;
+  offer: string | null;
+  product: string | null;   // product title (Klaviyo merge field)
+  productId: string | null; // recommended SKU id (Action record)
+  expectedRevenue: number;
   confidence: number;
 };
 
 /**
- * Persist that decisions were sent (handed to Klaviyo / exported) — the Pending → Exported transition
- * of the decision state machine. Writes one `Action` per decision, capturing the predicted
- * expectedRevenue/confidence + the recommended productId + attribution window, so the outcome loop
- * (orders/create webhook) and the performance dashboard can compare predicted vs actual.
+ * Persist that decisions were sent (Pending → Exported) AND hand the copy to Klaviyo so a single
+ * flow can deliver every play. Writes one `Action` per decision (predicted revenue/confidence +
+ * productId + window, for the outcome loop), then pushes altvary_active_play/play_name/message/
+ * offer/product onto each profile (best-effort — Klaviyo never blocks the send).
  */
 export async function markDecisionsSent(store: Store, decisions: SentDecision[]): Promise<number> {
   if (!decisions.length) return 0;
@@ -104,6 +113,10 @@ export async function markDecisionsSent(store: Store, decisions: SentDecision[])
       productId: d.productId,
     })),
   });
+  // Hand the decision copy to Klaviyo (one flow merges it). Non-fatal.
+  await syncDecisions(store, decisions.map((d) => ({
+    email: d.email, playId: d.playId, playName: d.playName, message: d.message, offer: d.offer, product: d.product,
+  }))).catch(() => {});
   return decisions.length;
 }
 
