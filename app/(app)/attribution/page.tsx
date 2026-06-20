@@ -7,12 +7,37 @@ import { formatMoney } from "../../../lib/money";
 
 const COLORS = ["var(--accent)", "var(--pos)", "var(--warn)", "var(--neg)", "var(--accent-ink)", "var(--muted)"];
 
+/** Skincare vertical (incl. R29 creator-LTV) ships behind a flag until rollout. */
+const SKINCARE = process.env.SKINCARE_FEATURES_ENABLED === "true";
+
+interface CreatorRow { source: string; customers: number; ltv: number; avgLtv: number; }
+
 export default async function AttributionPage({ searchParams }: { searchParams: Promise<{ range?: string }> }) {
   const range = asRange((await searchParams).range);
   const since = rangeSince(range);
   const store = await getCurrentStore();
   const currency = store?.currency ?? "USD";
   const orders = store ? await prisma.order.findMany({ where: { storeId: store.id, ...(since ? { createdAt: { gte: since } } : {}) }, select: { source: true, totalPrice: true } }) : [];
+
+  // R29 creator-LTV: which acquisition creators/campaigns bring the highest-value customers (lifetime,
+  // range-independent). Grouped by Customer.acquisitionSource; ranked by avg LTV so a low-volume creator
+  // with loyal customers surfaces above a high-volume one with one-and-done buyers.
+  let creators: CreatorRow[] = [];
+  if (store && SKINCARE) {
+    const rows = await prisma.customer.groupBy({
+      by: ["acquisitionSource"],
+      where: { storeId: store.id, acquisitionSource: { not: null } },
+      _count: { _all: true },
+      _sum: { totalSpent: true },
+    });
+    creators = rows
+      .map((r) => {
+        const customers = r._count._all;
+        const ltv = Math.round(r._sum.totalSpent ?? 0);
+        return { source: r.acquisitionSource as string, customers, ltv, avgLtv: customers ? ltv / customers : 0 };
+      })
+      .sort((a, b) => b.avgLtv - a.avgLtv);
+  }
 
   const totalOrders = orders.length;
   const totalRevenue = orders.reduce((s, o) => s + o.totalPrice, 0);
@@ -111,6 +136,32 @@ export default async function AttributionPage({ searchParams }: { searchParams: 
             </div>
           </div>
         )}
+
+        {SKINCARE && creators.length > 0 ? (
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-head">
+              <div>
+                <div className="card-title">Creator &amp; campaign LTV</div>
+                <div className="card-sub">Lifetime value of customers by acquisition source (discount code / UTM) · ranked by avg LTV</div>
+              </div>
+            </div>
+            <div className="tbl-wrap">
+              <table className="tbl">
+                <thead><tr><th>Creator / campaign</th><th style={{ textAlign: "right" }}>Customers</th><th className="hide-mobile" style={{ textAlign: "right" }}>Total LTV</th><th style={{ textAlign: "right" }}>Avg LTV</th></tr></thead>
+                <tbody>
+                  {creators.map((c) => (
+                    <tr key={c.source}>
+                      <td style={{ fontWeight: 600, fontSize: 13 }}>{c.source}</td>
+                      <td style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right" }}>{c.customers.toLocaleString()}</td>
+                      <td className="hide-mobile" style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--muted)", textAlign: "right" }}>{formatMoney(c.ltv, currency)}</td>
+                      <td style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, textAlign: "right" }}>{formatMoney(c.avgLtv, currency, { decimals: 2 })}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
 
         <div className="note" style={{ marginTop: 16 }}>
           <i className="ti ti-info-circle"></i>
