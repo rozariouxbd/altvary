@@ -30,11 +30,15 @@ export const R02: PlayDefinition = {
     "Active customers who have gone quiet (45–90 days) with meaningful spend. " +
     "Ranked by the revenue we expect to recover.",
 
+  // "Active customers gone quiet": the 45–90 day dormancy window + a meaningful-spend floor already
+  // define a valuable, freshly-lapsed customer. We deliberately do NOT gate on lifecycle segment —
+  // the segment is a store-relative percentile, so a high-LTV customer who's 60 days quiet still
+  // ranks "returning" and would be wrongly excluded. Dormancy + spend is the right winback target;
+  // expectedValue (AOV × dormancy-decayed save-rate) does the ranking.
   segment: (store) => ({
     storeId: store.id,
     lastOrderAt: { lte: day(45), gte: day(90) },
     totalSpent: { gte: 80 },
-    segment: { in: ["at_risk", "churning"] },
   }),
 
   // Expected recovery = historical AOV × dormancy-decayed save-rate.
