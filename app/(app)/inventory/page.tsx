@@ -7,6 +7,8 @@ import type { Prisma } from "@prisma/client";
 
 const LOW_THRESHOLD = 20;
 const PAGE_SIZE = 50;
+/** Skincare vertical (incl. R31 reformulation watch) ships behind a flag until rollout. */
+const SKINCARE = process.env.SKINCARE_FEATURES_ENABLED === "true";
 type StockFilter = "all" | "ok" | "low" | "out";
 
 function statusFor(qty: number): { label: string; cls: string } {
@@ -74,6 +76,12 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   const okCount = totalSkus - lowCount - oosCount;
   const inventoryValue = Math.round(valueRows[0]?.v ?? 0);
 
+  // R31 reformulation watch: SKUs whose return rate jumped recently vs the prior window (set in
+  // runScoring) — a possible reformulation/batch issue hurting satisfaction. Flag-gated.
+  const watchProducts = SKINCARE
+    ? await prisma.product.findMany({ where: { storeId: store.id, reformulationWatch: true }, select: { id: true, title: true, sku: true }, orderBy: { title: "asc" } })
+    : [];
+
   const STATUS_TABS: { key: StockFilter; label: string; n: number }[] = [
     { key: "all", label: "All", n: totalSkus },
     { key: "ok", label: "OK", n: okCount },
@@ -112,6 +120,30 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
             </div>
           ))}
         </div>
+
+        {SKINCARE && watchProducts.length > 0 ? (
+          <div className="card" style={{ marginBottom: 16, borderColor: "var(--warn)" }}>
+            <div className="card-head">
+              <div>
+                <div className="card-title"><i className="ti ti-alert-triangle" style={{ color: "var(--warn)", marginRight: 6 }}></i>Reformulation watch</div>
+                <div className="card-sub">{watchProducts.length} SKU{watchProducts.length === 1 ? "" : "s"} with a recent return-rate jump vs the prior 90 days — review for a reformulation or batch issue before it hits repeat rate</div>
+              </div>
+            </div>
+            <div className="tbl-wrap">
+              <table className="tbl">
+                <thead><tr><th>Product</th><th>SKU</th></tr></thead>
+                <tbody>
+                  {watchProducts.map((p) => (
+                    <tr key={p.id}>
+                      <td><div className="who"><span className="av">{skuInitials(p.title)}</span><div><div className="nm">{p.title}</div></div></div></td>
+                      <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)" }}>{p.sku || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
 
         {totalSkus === 0 ? (
           <div className="card" style={{ padding: "44px 22px", textAlign: "center", color: "var(--muted)" }}>
