@@ -3,6 +3,7 @@ import type { PlayConfig, Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { REGISTRY } from "./plays";
 import { computeSignals } from "./signals";
+import { memoizeByRun } from "./cache";
 import type {
   Candidate,
   CustomerSignal,
@@ -84,8 +85,11 @@ export async function evaluatePlay(
  * Per-request memoized (React cache): a page that needs it directly AND via buildDecisions only pays
  * once. Keyed by the `store` argument identity — thread the same store object through a render.
  */
-export const evaluateAll = cache(async function evaluateAll(store: Store): Promise<PlayEvalResult[]> {
+export const evaluateAll = cache((store: Store) =>
+  memoizeByRun("evaluateAll", store.id, () => evaluateAllUncached(store)));
+
+async function evaluateAllUncached(store: Store): Promise<PlayEvalResult[]> {
   // Compute order-derived signals once and share across all plays.
   const signals = await computeSignals(store.id);
   return Promise.all(REGISTRY.map((p) => evaluatePlay(p, store, signals)));
-});
+}

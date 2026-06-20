@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { prisma } from "../prisma";
+import { memoizeByRun } from "./cache";
 import type { CustomerSignal } from "./types";
 
 const DAY = 86_400_000;
@@ -74,8 +75,14 @@ async function computeScoreDrops(
   return out;
 }
 
-/** Per-request memoized (React cache): multiple pages/plays in one render share one computation. */
-export const computeSignals = cache(async function computeSignals(
+/**
+ * Run-scoped cached (per warm instance, keyed to the latest scoring run) + per-request memoized:
+ * the order/history scan + per-customer median runs once per run, shared across pages and renders.
+ */
+export const computeSignals = cache((storeId: string) =>
+  memoizeByRun("signals", storeId, () => computeSignalsUncached(storeId)));
+
+async function computeSignalsUncached(
   storeId: string
 ): Promise<Map<string, CustomerSignal>> {
   const [orders, scoreDrops] = await Promise.all([
@@ -121,4 +128,4 @@ export const computeSignals = cache(async function computeSignals(
   }
 
   return out;
-});
+}
