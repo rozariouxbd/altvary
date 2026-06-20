@@ -15,7 +15,8 @@ const EXPORTS = [
   { icon: "ti-box", name: "Inventory", href: "/api/exports/inventory", desc: "SKUs · stock, price, value, status" },
 ];
 
-export default async function ReportsPage() {
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const sp = await searchParams;
   const store = await getCurrentStore();
   const currency = store?.currency ?? "USD";
   const [customers, orders, lastRun, runCount] = store ? await Promise.all([
@@ -63,6 +64,14 @@ export default async function ReportsPage() {
     .sort((a, b) => b.revenue - a.revenue);
   const perfTotal = perfRows.reduce((t, r) => ({ sent: t.sent + r.sent, converted: t.converted + r.converted, revenue: t.revenue + r.revenue, predicted: t.predicted + r.predicted }), { sent: 0, converted: 0, revenue: 0, predicted: 0 });
 
+  // URL-driven tabs: Overview (snapshot), Performance (decision outcomes), Exports (CSV).
+  const TABS = [
+    { id: "overview", label: "Overview", icon: "ti-layout-dashboard" },
+    { id: "performance", label: "Performance", icon: "ti-target" },
+    { id: "exports", label: "Exports", icon: "ti-download" },
+  ];
+  const tab = TABS.some((t) => t.id === sp.tab) ? sp.tab! : "overview";
+
   return (
     <>
       <Topbar title="Reports" sub={lastRun?.finishedAt ? `Last run ${lastRun.finishedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "No runs yet"} search="Search reports…" cta={{ icon: "ti-download", label: "Customers CSV", href: "/api/exports/customers", variant: "primary" }} />
@@ -78,6 +87,16 @@ export default async function ReportsPage() {
           </div>
         </div>
 
+        {/* Tabs */}
+        <div style={{ display: "inline-flex", gap: 2, background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r-sm)", padding: 3, marginBottom: 18, flexWrap: "wrap" }}>
+          {TABS.map((t) => (
+            <a key={t.id} href={`/reports?tab=${t.id}`} style={{ padding: "7px 14px", borderRadius: 6, fontSize: 13, fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6, color: tab === t.id ? "var(--ink)" : "var(--muted)", background: tab === t.id ? "var(--card-2)" : "transparent", boxShadow: tab === t.id ? "var(--shadow)" : "none" }}>
+              <i className={`ti ${t.icon}`} /> {t.label}
+            </a>
+          ))}
+        </div>
+
+        {tab === "overview" && (<>
         {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 18 }}>
           {[
@@ -128,7 +147,10 @@ export default async function ReportsPage() {
           </div>
         </div>
 
-        {/* Decision performance (Outcome Intelligence) */}
+        </>)}
+
+        {tab === "performance" && (
+        /* Decision performance (Outcome Intelligence) */
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-head">
             <div>
@@ -173,6 +195,9 @@ export default async function ReportsPage() {
           </div>
         </div>
 
+        )}
+
+        {tab === "exports" && (<>
         {/* CSV exports */}
         <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".07em", color: "var(--muted)", marginBottom: 10, fontWeight: 700 }}>On-demand CSV exports</div>
         <div className="card" style={{ padding: "8px 22px 16px" }}>
@@ -187,6 +212,7 @@ export default async function ReportsPage() {
             </div>
           ))}
         </div>
+        </>)}
 
         <div className="note" style={{ marginTop: 16 }}>
           <i className="ti ti-info-circle"></i>
