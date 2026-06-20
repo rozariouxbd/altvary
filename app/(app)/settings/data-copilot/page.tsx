@@ -3,7 +3,7 @@ import Topbar from "../../../components/Topbar";
 import { prisma } from "../../../../lib/prisma";
 import { getCurrentStore } from "../../../../lib/auth";
 import { fetchProductsForScan } from "../../../../lib/shopify";
-import { suggestProductMetadata } from "../../../../lib/skincare";
+import { suggestProductMetadata, classifyTexture, detectBundle } from "../../../../lib/skincare";
 import CoPilotTable, { type CoPilotRow } from "./CoPilotTable";
 
 async function approveProducts(formData: FormData) {
@@ -23,6 +23,8 @@ async function approveProducts(formData: FormData) {
       paoDays: r.paoDays ?? null,
       skinConcern: r.skinConcern || null,
       shade: r.shade || null,
+      texture: r.texture || null,
+      isBundle: !!r.isBundle,
       metaConfirmedAt: new Date(),
     };
     await prisma.product.upsert({
@@ -48,7 +50,7 @@ export default async function DataCopilotPage({ searchParams }: { searchParams: 
         fetchProductsForScan(store),
         prisma.product.findMany({
           where: { storeId: store.id, metaConfirmedAt: { not: null } },
-          select: { id: true, productId: true, title: true, sizeValue: true, sizeUnit: true, volumeMl: true, category: true, routineStep: true, ingredients: true, paoDays: true, skinConcern: true, shade: true },
+          select: { id: true, productId: true, title: true, sizeValue: true, sizeUnit: true, volumeMl: true, category: true, routineStep: true, ingredients: true, paoDays: true, skinConcern: true, shade: true, texture: true, isBundle: true },
           orderBy: { title: "asc" },
         }),
       ]);
@@ -56,10 +58,12 @@ export default async function DataCopilotPage({ searchParams }: { searchParams: 
       // "Needs review" — products not yet confirmed, with fresh deterministic suggestions.
       reviewRows = scan.filter((s) => !done.has(s.id)).map((s) => {
         const m = suggestProductMetadata(s.source);
+        const ptext = [s.source.title, s.source.productType, s.source.tags].filter(Boolean).join(" ");
         return {
           id: s.id, productId: s.productId, title: s.title, rawText: m.rawText,
           sizeValue: m.sizeValue, sizeUnit: m.sizeUnit, category: m.category, routineStep: m.routineStep,
           ingredients: m.ingredients, paoDays: m.paoDays, skinConcern: m.skinConcern, shade: m.shade,
+          texture: classifyTexture(ptext) ?? undefined, isBundle: detectBundle(ptext),
           needsReview: m.needsReview,
         };
       });
@@ -69,7 +73,8 @@ export default async function DataCopilotPage({ searchParams }: { searchParams: 
         sizeValue: p.sizeValue ?? p.volumeMl ?? undefined, sizeUnit: p.sizeUnit ?? (p.volumeMl != null ? "ml" : undefined),
         category: p.category ?? undefined, routineStep: p.routineStep ?? undefined,
         ingredients: p.ingredients ?? [], paoDays: p.paoDays ?? undefined, skinConcern: p.skinConcern ?? undefined,
-        shade: p.shade ?? undefined, needsReview: false,
+        shade: p.shade ?? undefined, texture: p.texture ?? undefined, isBundle: p.isBundle,
+        needsReview: false,
       }));
     } catch {
       scanError = true;

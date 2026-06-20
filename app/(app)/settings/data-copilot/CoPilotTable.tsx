@@ -15,6 +15,8 @@ export interface CoPilotRow {
   paoDays?: number;
   skinConcern?: string;
   shade?: string;
+  texture?: string;   // rich | light (R25 seasonal)
+  isBundle?: boolean;  // bundle/set/kit (R32)
   needsReview: boolean;
 }
 
@@ -84,6 +86,7 @@ export default function CoPilotTable(
                 <th>Size</th>
                 <th>Category</th>
                 <th>Shade</th>
+                <th>Texture</th>
                 <th>Key actives</th>
                 <th style={{ textAlign: "right" }}>Action</th>
               </tr>
@@ -121,6 +124,16 @@ export default function CoPilotTable(
                           <input value={r.shade ?? ""} placeholder={isMakeup(r.category) ? "shade" : "—"} disabled={!isMakeup(r.category)}
                             onChange={(e) => patch(r.id, { shade: e.target.value || undefined })} style={inp(110)} />
                         </td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          <select value={r.texture ?? ""} onChange={(e) => patch(r.id, { texture: e.target.value || undefined })} style={inp(72)}>
+                            <option value="">—</option>
+                            <option value="rich">rich</option>
+                            <option value="light">light</option>
+                          </select>{" "}
+                          <label style={{ fontSize: 11, color: "var(--muted)" }}>
+                            <input type="checkbox" checked={!!r.isBundle} onChange={(e) => patch(r.id, { isBundle: e.target.checked })} /> bundle
+                          </label>
+                        </td>
                         <td>
                           <input value={r.ingredients.join(", ")} placeholder="actives"
                             onChange={(e) => patch(r.id, { ingredients: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
@@ -132,6 +145,7 @@ export default function CoPilotTable(
                         <td>{r.sizeValue != null ? <span style={{ fontFamily: "var(--mono)" }}>{r.sizeValue} {r.sizeUnit ?? "ml"}</span> : <span className="tag warn">missing</span>}</td>
                         <td>{r.category ? <span className="tag acc">{r.category}</span> : <span className="tag warn">missing</span>}{r.routineStep ? <span style={{ fontSize: 11, color: "var(--faint)", marginLeft: 6 }}>{STEP_LABEL[r.routineStep]}</span> : null}</td>
                         <td style={{ fontSize: 12 }}>{r.shade ? <span className="tag">{r.shade}</span> : <span style={{ color: "var(--faint)" }}>—</span>}</td>
+                        <td style={{ fontSize: 12 }}>{r.texture ? <span className="tag">{r.texture}</span> : <span style={{ color: "var(--faint)" }}>—</span>}{r.isBundle ? <span className="tag acc" style={{ marginLeft: 4 }}>bundle</span> : null}</td>
                         <td style={{ fontSize: 12 }}>{r.ingredients.length ? r.ingredients.join(", ") : <span style={{ color: "var(--faint)" }}>—</span>}</td>
                       </>
                     )}
@@ -148,7 +162,7 @@ export default function CoPilotTable(
                 );
               })}
               {rows.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: "28px 0" }}>
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: "28px 0" }}>
                   {tab === "review" ? "Everything's reviewed — your product data is fully structured. 🎉" : "No confirmed products yet — approve some from the “Needs review” tab."}
                 </td></tr>
               )}
