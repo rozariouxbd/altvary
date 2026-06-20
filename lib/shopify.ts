@@ -627,6 +627,24 @@ export async function handleWebhook(
       });
       await writeLineItems(store.id, String(o.id), customerId, new Date(o.created_at), o.line_items, gift);
       await recomputeAggregates(store.id, customerId);
+      // Outcome attribution (Decision Layer): a real purchase closes any of this customer's open
+      // decisions still inside their attribution window — Exported → Converted. 30-day last-touch
+      // *influenced* revenue (not proven causation); gifts never count. Idempotent (only flips
+      // status="exported"). See lib/engine/decisions.ts + the performance dashboard.
+      if (!gift) {
+        const open = await prisma.action.findMany({
+          where: { storeId: store.id, customerId, status: "exported" },
+          select: { id: true, exportedAt: true, windowDays: true },
+        }).catch(() => []);
+        const nowMs = Date.now();
+        const due = open.filter((a) => a.exportedAt.getTime() + (a.windowDays ?? 30) * 86_400_000 >= nowMs);
+        if (due.length) {
+          await prisma.action.updateMany({
+            where: { id: { in: due.map((a) => a.id) } },
+            data: { status: "converted", converted: true, convertedAt: new Date(o.created_at), revenue: Number(o.total_price) || 0 },
+          }).catch(() => {});
+        }
+      }
       // Recompute this customer's soonest product depletion — a fresh order of a
       // product resets its clock ("applies the brakes"). Persist + push to Klaviyo.
       const replen = await computeReplenishmentForCustomer(store.id, customerId).catch(() => null);

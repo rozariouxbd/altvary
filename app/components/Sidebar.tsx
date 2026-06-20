@@ -16,8 +16,9 @@ export default function Sidebar({ customerCount, playCount, storeName, trialDays
 
   const nav = {
     Workspace: [
+      { href: "/today",           icon: "ti-target",            label: "Today",            count: "" },
       { href: "/dashboard",       icon: "ti-layout-dashboard",  label: "Dashboard",        count: "" },
-      { href: "/recommendations", icon: "ti-sparkles",          label: "Recommendations",  count: String(playCount) },
+      { href: "/recommendations", icon: "ti-sparkles",          label: "Intelligence",     count: String(playCount) },
       { href: "/customers",       icon: "ti-users",             label: "Customers",        count: customerCount.toLocaleString() },
       { href: "/scores",          icon: "ti-chart-histogram",   label: "RFME Scores",      count: "" },
     ],

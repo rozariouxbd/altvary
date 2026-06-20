@@ -285,9 +285,42 @@ def write_db(custs_df: pd.DataFrame, orders: pd.DataFrame, shop: str = SIM_SHOP,
         execute_values(cur,
             'INSERT INTO "OrderLineItem" (id,"storeId","orderId","customerId","productId",title,quantity,price,"lineTotal","isGift","createdAt") '
             'VALUES %s ON CONFLICT (id) DO NOTHING', lirows)
+        # Action workflow rows (Decision Layer outcomes) so /today exclusions + the performance
+        # dashboard render on sim data: a cohort was "sent" a decision — some purchased in-window
+        # (converted), some are still open (exported), some lapsed (expired).
+        arng = np.random.default_rng(99)
+        plays = ["R02", "R05", "R06", "R08", "R09"]
+        arows = []
+        ai = 0
+        for r in custs_df.itertuples():
+            if int(getattr(r, "total_orders", 0)) < 1 or arng.random() > 0.4:
+                continue
+            ai += 1
+            days_ago = int(arng.integers(0, 46))
+            exported = NOW - timedelta(days=days_ago)
+            play = plays[int(arng.integers(len(plays)))]
+            exp_rev = round(float(getattr(r, "total_spent", 0)) / max(int(getattr(r, "total_orders", 1)), 1), 2) or 25.0
+            conf = int(arng.integers(45, 92))
+            pidv = pid(CATALOG[int(arng.integers(len(CATALOG)))].sku)
+            if days_ago <= 30 and arng.random() < 0.4:
+                status, converted = "converted", True
+                conv_at = exported + timedelta(days=min(days_ago, 1 + int(arng.integers(0, 7))))
+                rev = round(exp_rev * float(arng.uniform(0.7, 1.6)), 2)
+            elif days_ago > 30:
+                status, converted, conv_at, rev = "expired", False, None, None
+            else:
+                status, converted, conv_at, rev = "exported", False, None, None
+            arows.append((
+                f"sim-{tag}-a-{ai}", sid, nid(r.customer_id), play, exported, status,
+                exp_rev, conf, 30, pidv, converted, conv_at, rev,
+            ))
+        if arows:
+            execute_values(cur,
+                'INSERT INTO "Action" (id,"storeId","customerId","playId","exportedAt",status,"expectedRevenue",confidence,"windowDays","productId",converted,"convertedAt",revenue) '
+                'VALUES %s ON CONFLICT (id) DO NOTHING', arows)
         conn.commit()
     print(f"[db] store '{shop}': {len(custs_df)} customers, {int((~orders.cancelled).sum())} live orders, "
-          f"{len(prows)} products, {len(lirows)} line items written")
+          f"{len(prows)} products, {len(lirows)} line items, {len(arows)} actions written")
 
 
 def load_existing(shop: str, wipe: bool) -> None:

@@ -318,6 +318,9 @@ model ScoringRun {
   store      Store     @relation(fields: [storeId], references: [id])
 }
 
+// A handed-off decision (the workflow record of the Decision Layer). Decisions themselves are a
+// computed projection (no Decision table); only the action of sending one is persisted here, which
+// drives the state machine (exported → converted → expired) + predicted-vs-actual outcome analysis.
 model Action {
   id          String    @id @default(cuid())
   storeId     String
@@ -325,9 +328,21 @@ model Action {
   playId      String
   exportedAt  DateTime  @default(now())
   convertedAt DateTime?
-  converted   Boolean   @default(false)
+  converted   Boolean   @default(false) // kept in sync with status="converted" for back-compat
+  // Lifecycle state machine: exported (handed to Klaviyo / CSV) → converted (purchase attributed in
+  // window) → expired (window lapsed, no purchase). "pending" is the pre-Action projection (no row).
+  status         String   @default("exported")
+  // Predicted values captured at export time, so the performance dashboard can compare predicted vs
+  // actual without a separate snapshot table.
+  expectedRevenue Float?
+  confidence      Int?
+  windowDays      Int?     // attribution window used for this action
+  productId       String?  // the recommended SKU at export (product-matched attribution + re-surface cooldown)
+  revenue         Float?   // attributed order value once converted (30-day last-touch influenced)
   store       Store     @relation(fields: [storeId], references: [id])
   customer    Customer  @relation(fields: [customerId], references: [id])
+
+  @@index([storeId, customerId, status])
 }
 
 // Per-store, per-play mutable state. The play *definition* stays in code (lib/engine/plays).

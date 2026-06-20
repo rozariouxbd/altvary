@@ -1,6 +1,7 @@
 import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { bulkSyncProfiles, reconcileIngredientSuppressions } from "../klaviyo";
+import { expireStaleActions } from "./export";
 import { computeReplenishment, computeRoutineGaps, computeFreshness, computeSkinIntro, computeHouseholds, computeSafetyHolds, computeRegimen, computeLapsedActives, computeBuyerPersona, computeRoutineDropout, computeReactionRisk, computeAcquisition, computeAdvocates, computeSeasonalShift, computeBundleDropout, computeReformulationWatch } from "./exhaustion";
 import { computeMarginErosion } from "./margin";
 import { resolveActivePlay } from "./priority";
@@ -583,6 +584,10 @@ export async function runScoring(store: Store, options: RunOptions = {}): Promis
       ).catch(() => {});
       await reconcileIngredientSuppressions(store).catch(() => {});
     }
+
+    // Decision Layer outcome upkeep: settle any decisions whose attribution window lapsed without a
+    // purchase (Exported → Expired) so the performance dashboard + re-surface cooldown read clean.
+    await expireStaleActions(store.id).catch(() => {});
 
     return { runId: run!.id, scored: scored.length, segments, dryRun: false };
   } catch (err) {

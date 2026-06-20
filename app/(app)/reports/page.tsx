@@ -2,6 +2,7 @@ import Topbar from "../../components/Topbar";
 import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { evaluateAll } from "../../../lib/engine/evaluate";
+import { getPlay } from "../../../lib/engine/plays";
 import { formatMoney } from "../../../lib/money";
 
 const SEG_LABEL: Record<string, string> = { vip: "VIP", returning: "Returning", at_risk: "At risk", churning: "Churning", lost: "Lost" };
@@ -39,6 +40,28 @@ export default async function ReportsPage() {
   const queued = results.reduce((s, r) => s + r.candidateCount, 0);
   const projected = results.reduce((s, r) => s + r.projectedRevenue, 0);
   const activePlays = results.filter((r) => r.candidateCount > 0);
+
+  // Decision performance (Outcome Intelligence): per-play sent / converted / influenced revenue from
+  // the Action workflow record. Recovery rate = converted / sent; predicted-vs-actual compares the
+  // expectedRevenue captured at send time against the attributed order value.
+  const actionAgg = store ? await prisma.action.groupBy({
+    by: ["playId", "status"],
+    where: { storeId: store.id },
+    _count: { _all: true },
+    _sum: { revenue: true, expectedRevenue: true },
+  }) : [];
+  const perfByPlay = new Map<string, { sent: number; converted: number; revenue: number; predicted: number }>();
+  for (const a of actionAgg) {
+    const e = perfByPlay.get(a.playId) ?? { sent: 0, converted: 0, revenue: 0, predicted: 0 };
+    e.sent += a._count._all;
+    e.predicted += a._sum.expectedRevenue ?? 0;
+    if (a.status === "converted") { e.converted += a._count._all; e.revenue += a._sum.revenue ?? 0; }
+    perfByPlay.set(a.playId, e);
+  }
+  const perfRows = [...perfByPlay.entries()]
+    .map(([playId, v]) => ({ playId, name: getPlay(playId)?.name ?? playId, ...v, recovery: v.sent ? v.converted / v.sent : 0 }))
+    .sort((a, b) => b.revenue - a.revenue);
+  const perfTotal = perfRows.reduce((t, r) => ({ sent: t.sent + r.sent, converted: t.converted + r.converted, revenue: t.revenue + r.revenue, predicted: t.predicted + r.predicted }), { sent: 0, converted: 0, revenue: 0, predicted: 0 });
 
   return (
     <>
@@ -102,6 +125,51 @@ export default async function ReportsPage() {
               ) : <>No plays have candidates right now.</>}{" "}
               Segments: {Object.entries(segCounts).filter(([k]) => k).map(([k, n]) => `${n} ${SEG_LABEL[k] ?? k}`).join(" · ")}.
             </p>
+          </div>
+        </div>
+
+        {/* Decision performance (Outcome Intelligence) */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head">
+            <div>
+              <div className="card-title">Decision performance</div>
+              <div className="card-sub">Outcomes from sent decisions · 30-day last-touch influenced revenue (Shopify purchases)</div>
+            </div>
+          </div>
+          {perfRows.length === 0 ? (
+            <div style={{ padding: "28px 22px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+              No decisions sent yet — send opportunities from <strong>Today</strong> and outcomes will appear here as customers purchase.
+            </div>
+          ) : (
+            <div className="tbl-wrap">
+              <table className="tbl">
+                <thead><tr><th>Play</th><th style={{ textAlign: "right" }}>Sent</th><th style={{ textAlign: "right" }}>Converted</th><th style={{ textAlign: "right" }}>Recovery</th><th className="hide-mobile" style={{ textAlign: "right" }}>Rev / decision</th><th style={{ textAlign: "right" }}>Influenced rev</th></tr></thead>
+                <tbody>
+                  {perfRows.map((r) => (
+                    <tr key={r.playId}>
+                      <td style={{ fontWeight: 600, fontSize: 13 }}><span style={{ fontFamily: "var(--mono)", color: "var(--accent-ink)", marginRight: 6 }}>{r.playId}</span>{r.name}</td>
+                      <td style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right" }}>{r.sent.toLocaleString()}</td>
+                      <td style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right" }}>{r.converted.toLocaleString()}</td>
+                      <td style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right", color: r.recovery >= 0.15 ? "var(--pos)" : undefined }}>{(r.recovery * 100).toFixed(0)}%</td>
+                      <td className="hide-mobile" style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right", color: "var(--muted)" }}>{formatMoney(r.sent ? r.revenue / r.sent : 0, currency, { decimals: 2 })}</td>
+                      <td style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, textAlign: "right" }}>{formatMoney(Math.round(r.revenue), currency)}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ borderTop: "2px solid var(--line)" }}>
+                    <td style={{ fontWeight: 700, fontSize: 13 }}>All decisions</td>
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right", fontWeight: 700 }}>{perfTotal.sent.toLocaleString()}</td>
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right", fontWeight: 700 }}>{perfTotal.converted.toLocaleString()}</td>
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right", fontWeight: 700 }}>{(perfTotal.sent ? perfTotal.converted / perfTotal.sent * 100 : 0).toFixed(0)}%</td>
+                    <td className="hide-mobile" style={{ fontFamily: "var(--mono)", fontSize: 13, textAlign: "right", color: "var(--muted)" }}>{formatMoney(perfTotal.sent ? perfTotal.revenue / perfTotal.sent : 0, currency, { decimals: 2 })}</td>
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700, textAlign: "right" }}>{formatMoney(Math.round(perfTotal.revenue), currency)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="note" style={{ margin: "0 16px 16px" }}>
+            <i className="ti ti-info-circle"></i>
+            <span><strong>Influenced</strong>, not proven — last-touch within a 30-day window. Incremental lift (holdout / product-matched) is the next step before performance-based billing.</span>
           </div>
         </div>
 

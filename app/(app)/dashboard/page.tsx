@@ -4,6 +4,7 @@ import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { formatMoney } from "../../../lib/money";
 import { evaluateAll } from "../../../lib/engine/evaluate";
+import { buildDecisions } from "../../../lib/engine/decisions";
 import type { Customer } from "@prisma/client";
 
 export const metadata = { title: "Dashboard — Altvary" };
@@ -15,16 +16,6 @@ const SEG_META: Record<string, { cls: string; label: string; range: string }> = 
   at_risk: { cls: "seg-risk", label: "At risk", range: "40–59" },
   churning: { cls: "seg-churn", label: "Churning", range: "20–39" },
   lost: { cls: "seg-lost", label: "Lost", range: "0–19" },
-};
-const SEG_SCORE_KEY: Record<string, string> = {
-  vip: "vip", returning: "ret", at_risk: "risk", churning: "churn", lost: "lost",
-};
-const STATUS_META: Record<string, { label: string; dot: string }> = {
-  live: { label: "Live", dot: "pos" },
-  exported: { label: "Exported", dot: "acc" },
-  draft: { label: "Ready", dot: "warn" },
-  needs_attention: { label: "Needs action", dot: "neg" },
-  paused: { label: "Paused", dot: "idle" },
 };
 
 function prettyStore(domain: string): string {
@@ -58,11 +49,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     seg, ...SEG_META[seg], count: counts[seg] ?? 0, pct: total ? ((counts[seg] ?? 0) / total) * 100 : 0,
   }));
 
-  // Top actions (highest expected-value candidates across all plays)
-  const topActions = results
-    .flatMap((r) => r.candidates.map((cand) => ({ play: r.play, status: r.status, cand })))
-    .sort((a, b) => b.cand.expectedValue - a.cand.expectedValue)
-    .slice(0, 6);
+  // Top actions = the unified Decision Layer (one deduped decision per customer), previewed here;
+  // the full ranked queue lives on /today. Replaces the old per-play flatMap that double-counted
+  // customers across plays.
+  const decisions = store ? await buildDecisions(store) : [];
+  const topActions = decisions.slice(0, 6);
 
   return (
     <>
@@ -130,14 +121,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           )}
         </div>
 
-        {/* Top recommendations */}
+        {/* Top decisions — preview of the unified Decision Layer (full queue on /today) */}
         <div className="card">
           <div className="card-head">
             <div>
-              <div className="card-title">Top recommendations</div>
-              <div className="card-sub">Highest-value actions · scored from real orders</div>
+              <div className="card-title">Today&apos;s top revenue decisions</div>
+              <div className="card-sub">One action per customer · ranked by expected revenue × confidence</div>
             </div>
-            <Link className="btn btn-plain btn-sm" href="/recommendations">All {results.length} <i className="ti ti-arrow-right" /></Link>
+            <Link className="btn btn-plain btn-sm" href="/today">Open Today <i className="ti ti-arrow-right" /></Link>
           </div>
           <div className="tbl-wrap">
             <table className="tbl">
@@ -146,21 +137,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                   <th>Customer</th>
                   <th>Action</th>
                   <th className="hide-tablet">Why</th>
-                  <th className="hide-tablet" style={{ textAlign: "right" }}>Lift</th>
-                  <th className="hide-mobile">Score</th>
-                  <th>Status</th>
+                  <th className="hide-tablet" style={{ textAlign: "right" }}>Expected rev</th>
+                  <th className="hide-mobile">Confidence</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {topActions.length === 0 ? (
-                  <tr><td colSpan={7}><div className="empty-state"><i className="ti ti-sparkles" /><div className="es-t">No actions yet — add orders to your store to generate recommendations</div></div></td></tr>
-                ) : topActions.map(({ play, status, cand }) => {
-                  const c = cand.customer;
-                  const st = STATUS_META[status] ?? STATUS_META.draft;
-                  const segKey = SEG_SCORE_KEY[c.segment ?? ""] ?? "risk";
+                  <tr><td colSpan={6}><div className="empty-state"><i className="ti ti-sparkles" /><div className="es-t">No decisions yet — add orders to your store to generate today&apos;s opportunities</div></div></td></tr>
+                ) : topActions.map((d) => {
+                  const c = d.customer;
                   return (
-                    <tr key={`${play.id}-${c.id}`}>
+                    <tr key={`${d.playId}-${c.id}`}>
                       <td>
                         <div className="who">
                           <span className="av">{initials(c)}</span>
@@ -170,22 +158,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                           </div>
                         </div>
                       </td>
-                      <td>{play.name}</td>
-                      <td className="hide-tablet" style={{ fontSize: 12.5, color: "var(--muted)" }}>{play.description}</td>
-                      <td className="hide-tablet" style={{ textAlign: "right" }}><span className="num t-pos">+${cand.expectedValue}</span></td>
+                      <td>{d.playName}</td>
+                      <td className="hide-tablet" style={{ fontSize: 12.5, color: "var(--muted)" }}>{d.why}</td>
+                      <td className="hide-tablet" style={{ textAlign: "right" }}><span className="num t-pos">+{formatMoney(d.expectedRevenue, currency)}</span></td>
                       <td>
-                        <span className={`score ${segKey}`}>
-                          <span className="v">{Math.round(c.rfmeScore ?? 0)}</span>
-                          <span className="bar"><span className="fill" style={{ width: `${Math.round(c.rfmeScore ?? 0)}%` }} /></span>
-                        </span>
-                      </td>
-                      <td>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600 }}>
-                          <span className={`dot ${st.dot}`} />{st.label}
-                        </span>
+                        {d.confidence.calibrated
+                          ? <span className="tag" style={{ background: "var(--card-2)", fontFamily: "var(--mono)", fontWeight: 700 }}>{d.confidence.score}</span>
+                          : <span className="tag warn">provisional</span>}
                       </td>
                       <td style={{ textAlign: "right" }}>
-                        <Link href={`/recommendations/${play.code.toLowerCase()}`} className="btn btn-ghost btn-sm">Open →</Link>
+                        <Link href="/today" className="btn btn-ghost btn-sm">Open →</Link>
                       </td>
                     </tr>
                   );

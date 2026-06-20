@@ -1,6 +1,7 @@
 import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { evaluatePlay } from "./evaluate";
+import { ATTRIBUTION_WINDOW_DAYS, type Decision } from "./decisions";
 import type { Candidate, ExportColumn, PlayDefinition } from "./types";
 
 const EXPORT_LIMIT_PER_HOUR = Number(process.env.EXPORT_LIMIT_PER_HOUR ?? 10);
@@ -73,4 +74,47 @@ export async function exportPlay(
 
   const filename = `${play.id.toLowerCase()}-${exportedAt.toISOString().slice(0, 10)}.csv`;
   return { csv, count: candidates.length, filename };
+}
+
+/** A decision being handed off (the fields the Action record needs). */
+type SentDecision = Pick<Decision, "playId" | "expectedRevenue" | "productId"> & {
+  customerId: string;
+  confidence: number;
+};
+
+/**
+ * Persist that decisions were sent (handed to Klaviyo / exported) — the Pending → Exported transition
+ * of the decision state machine. Writes one `Action` per decision, capturing the predicted
+ * expectedRevenue/confidence + the recommended productId + attribution window, so the outcome loop
+ * (orders/create webhook) and the performance dashboard can compare predicted vs actual.
+ */
+export async function markDecisionsSent(store: Store, decisions: SentDecision[]): Promise<number> {
+  if (!decisions.length) return 0;
+  const exportedAt = new Date();
+  await prisma.action.createMany({
+    data: decisions.map((d) => ({
+      storeId: store.id,
+      customerId: d.customerId,
+      playId: d.playId,
+      exportedAt,
+      status: "exported",
+      expectedRevenue: d.expectedRevenue,
+      confidence: d.confidence,
+      windowDays: ATTRIBUTION_WINDOW_DAYS,
+      productId: d.productId,
+    })),
+  });
+  return decisions.length;
+}
+
+/**
+ * Sweep exported Actions whose attribution window has lapsed with no conversion → "expired"
+ * (Exported → Expired). Cheap idempotent UPDATE; call from runScoring so the perf dashboard and the
+ * re-surface cooldown read a settled state.
+ */
+export async function expireStaleActions(storeId: string): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE "Action" SET "status" = 'expired'
+    WHERE "storeId" = ${storeId} AND "status" = 'exported'
+      AND "exportedAt" + (COALESCE("windowDays", ${ATTRIBUTION_WINDOW_DAYS}) || ' days')::interval < now()`;
 }
