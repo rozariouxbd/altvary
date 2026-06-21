@@ -346,6 +346,63 @@ export async function syncDecisions(store: Pick<Store, "klaviyoApiKey">, rows: D
   return ok ? profiles.length : 0;
 }
 
+/** One sent decision as a Klaviyo event (the reliable, re-fires-every-send flow trigger). */
+export interface DecisionEvent {
+  email: string;
+  customerId: string;
+  playId: string;
+  playName: string;
+  product: string | null;
+  offer: string | null;
+  expectedRevenue: number;
+  confidence: number;
+}
+
+/** Klaviyo bulk-event job accepts many profiles per request. */
+const EVENT_BULK_LIMIT = 1000;
+
+/**
+ * Fire an "Altvary Decision Sent" Klaviyo event per sent decision so the merchant can trigger their
+ * flow on the EVENT (fires on every send, unlike a segment-join which only fires on first entry).
+ * Event properties (play, product, offer…) are also usable as {{ event.* }} merge tags. Bulk +
+ * best-effort: a failure (or schema drift) never blocks the send — the profile-property push already
+ * delivered the data. `unique_id` keys idempotency to this send batch.
+ */
+export async function trackDecisionEvents(store: Pick<Store, "klaviyoApiKey">, rows: DecisionEvent[], at: Date): Promise<void> {
+  const key = getKlaviyoKey(store);
+  if (!key) return;
+  const withEmail = rows.filter((r) => r.email);
+  if (withEmail.length === 0) return;
+  const iso = at.toISOString();
+  const mk = (r: DecisionEvent) => ({
+    type: "event-bulk-create",
+    attributes: {
+      profile: { data: { type: "profile", attributes: { email: r.email } } },
+      events: {
+        data: [{
+          type: "event",
+          attributes: {
+            metric: { data: { type: "metric", attributes: { name: "Altvary Decision Sent" } } },
+            properties: { play: r.playId, play_name: r.playName, product: r.product, offer: r.offer, expected_revenue: r.expectedRevenue, confidence: r.confidence },
+            value: r.expectedRevenue,
+            unique_id: `${r.customerId}-${iso}`,
+            time: iso,
+          },
+        }],
+      },
+    },
+  });
+  for (let i = 0; i < withEmail.length; i += EVENT_BULK_LIMIT) {
+    const data = withEmail.slice(i, i + EVENT_BULK_LIMIT).map(mk);
+    try {
+      await klaviyoFetch(key, "/event-bulk-create-jobs/", {
+        method: "POST",
+        body: JSON.stringify({ data: { type: "event-bulk-create-job", attributes: { "events-bulk-create": { data } } } }),
+      });
+    } catch { /* best-effort */ }
+  }
+}
+
 /**
  * Reconcile every customer's ingredient-suppression list to Klaviyo (the slow lane for the
  * real-time refund push). Groups CustomerIngredientSuppression by customer and upserts the

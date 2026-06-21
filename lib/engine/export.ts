@@ -2,7 +2,7 @@ import type { Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { evaluatePlay } from "./evaluate";
 import { ATTRIBUTION_WINDOW_DAYS } from "./decisions";
-import { syncDecisions } from "../klaviyo";
+import { syncDecisions, trackDecisionEvents } from "../klaviyo";
 import type { Candidate, ExportColumn, PlayDefinition } from "./types";
 
 const EXPORT_LIMIT_PER_HOUR = Number(process.env.EXPORT_LIMIT_PER_HOUR ?? 10);
@@ -113,10 +113,18 @@ export async function markDecisionsSent(store: Store, decisions: SentDecision[])
       productId: d.productId,
     })),
   });
-  // Hand the decision copy to Klaviyo (one flow merges it). Non-fatal.
-  await syncDecisions(store, decisions.map((d) => ({
-    email: d.email, playId: d.playId, playName: d.playName, message: d.message, offer: d.offer, product: d.product,
-  }))).catch(() => {});
+  // Hand the decision off to Klaviyo, in parallel + non-fatal:
+  //  - profile props (one merge-field flow renders the copy)
+  //  - an "Altvary Decision Sent" event (re-fires-every-send flow trigger)
+  await Promise.all([
+    syncDecisions(store, decisions.map((d) => ({
+      email: d.email, playId: d.playId, playName: d.playName, message: d.message, offer: d.offer, product: d.product,
+    }))),
+    trackDecisionEvents(store, decisions.map((d) => ({
+      email: d.email, customerId: d.customerId, playId: d.playId, playName: d.playName,
+      product: d.product, offer: d.offer, expectedRevenue: d.expectedRevenue, confidence: d.confidence,
+    })), exportedAt),
+  ]).catch(() => {});
   return decisions.length;
 }
 
