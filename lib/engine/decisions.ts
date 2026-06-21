@@ -2,6 +2,7 @@ import type { Customer, Store } from "@prisma/client";
 import { prisma } from "../prisma";
 import { evaluateAll } from "./evaluate";
 import { computeSignals } from "./signals";
+import { applyGenerativeCopy } from "./copy";
 import { signalText } from "./why";
 import type { CustomerSignal } from "./types";
 
@@ -242,7 +243,7 @@ export async function buildDecisions(store: Store): Promise<Decision[]> {
 
   const batches = await loadProductBatches(store.id, ranked.map((r) => r.customer.id));
 
-  return ranked.map((w) => {
+  const decisions: Decision[] = ranked.map((w) => {
     const product = pickProduct(w.playId, w.customer, batches);
     const why = signalText(w.playId, w.customer, w.signal, store.currency);
     const offerCode = offerByPlay.get(w.playId) ?? OFFER_BY_PLAY[w.playId] ?? null;
@@ -267,4 +268,10 @@ export async function buildDecisions(store: Store): Promise<Decision[]> {
       rankScore: w.rankScore,
     };
   });
+
+  // Optional AI generation pass: rewrites `message` into on-brand copy for the top-ranked decisions
+  // (deterministic template stays the fallback). No-op unless ALTVARY_GENERATIVE_COPY is enabled.
+  await applyGenerativeCopy(store, decisions);
+
+  return decisions;
 }

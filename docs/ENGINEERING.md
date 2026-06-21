@@ -172,6 +172,23 @@ SMTP (needs a sending domain).
 
 ---
 
+### 2026-06-21 — Generative decision copy (optional AI) · _pending commit_
+- **What.** New `lib/engine/copy.ts` rewrites each decision's `message` into warm, on-brand copy via
+  the Anthropic SDK (`claude-haiku-4-5`), applied inside `buildDecisions` after the deterministic
+  template is built. The generated text shows in Today's Message column and flows to Klaviyo on Send
+  unchanged (no `export.ts` change). Added dep `@anthropic-ai/sdk`.
+- **Why.** First piece of the "what else can AI decide" thread — generation (copy) is the LLM-shaped
+  slot; everything else in the decision stays deterministic/predictive. Distinct from the Co-Pilot,
+  which is regex/dictionaries (no LLM).
+- **Safe by default.** OFF unless `ALTVARY_GENERATIVE_COPY="true"` **and** `ANTHROPIC_API_KEY` set →
+  otherwise the template is used verbatim (zero behavior change). LLM writes **prose only**: product
+  name + discount code are passed as fixed facts, and a sanitizer rejects any no-offer output that
+  implies a discount, or empty/overlong text → template fallback. Generation is capped to the top
+  `COPY_CAP` (40) ranked decisions and **memoized per scoring run** (`memoizeByRun`), so it's one
+  bounded burst per run per warm instance, not one call per page view.
+- **Verification.** `tsc --noEmit` + `next build` clean (flag off). Live LLM output not verified in
+  CI (needs key + flag). Follow-ups: regenerate/preview control on Today; copy-variant bandit.
+
 ### 2026-06-20 — Land on Today; rename Dashboard → Overview · `ddfa8de`
 - **What.** Post-login + root redirects now point to `/today` (the decision queue), not `/dashboard`.
   Renamed the "Dashboard" nav item / page to **"Overview"** (route `/dashboard` unchanged) so it no
