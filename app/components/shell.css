@@ -355,6 +355,8 @@
   .page{ padding:14px; }
   .page-head{ flex-wrap:wrap; gap:10px; }
   .stat-grid{ grid-template-columns:repeat(2,1fr); }
+  .kb-grid{ grid-template-columns:1fr !important; }
+  .kb-grid > .card:first-child{ position:static !important; }
 }
 @media (max-width:480px){
   .hide-mobile{ display:none !important; }

@@ -126,6 +126,7 @@ export default async function IntegrationsPage() {
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <a href="/settings" className="btn btn-ghost btn-sm">Manage</a>
+                <a href="/help?a=klaviyo-build-flow" className="btn btn-ghost btn-sm">Setup guide</a>
                 <span style={{ fontSize: 11, color: "var(--faint)", marginLeft: "auto" }}>
                   {store?.klaviyoSyncedAt ? `Last synced ${timeAgo(store.klaviyoSyncedAt)}` : "Sync pending next run"}
                 </span>
