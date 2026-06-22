@@ -67,16 +67,25 @@ function sentChip(it: SentItem) {
   return <span className="tag acc">Sent · awaiting outcome</span>;
 }
 
-export default function TodayTable({ rows, sent = [], action }: { rows: TodayRow[]; sent?: SentItem[]; action: (fd: FormData) => void }) {
+interface RegenCtx { playName: string; why: string; productTitle: string | null; offerCode: string | null; firstName: string | null }
+
+export default function TodayTable({ rows, sent = [], action, aiEnabled = false, regenerate }: {
+  rows: TodayRow[]; sent?: SentItem[]; action: (fd: FormData) => void;
+  aiEnabled?: boolean; regenerate?: (ctx: RegenCtx) => Promise<string | null>;
+}) {
   const formRef = useRef<HTMLFormElement>(null);
   const payloadRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState<Set<string>>(new Set()); // expanded confidence cells
   const [view, setView] = useState<"cards" | "table">("cards");
   const [filter, setFilter] = useState<Filter>("all");
   const [sending, setSending] = useState<Set<string>>(new Set()); // momentary "Sent ✓" feedback
+  const [messages, setMessages] = useState<Record<string, string>>({}); // regenerated copy overrides
+  const [rerolling, setRerolling] = useState<Set<string>>(new Set());
 
   const onSent = filter === "sent";
+  const showReroll = aiEnabled && !!regenerate;
   const shown = filter === "all" ? rows : filter === "sent" ? [] : rows.filter((r) => groupOf(r.playId) === filter);
+  const msgOf = (r: TodayRow) => messages[r.customerId] ?? r.message;
 
   function send(rs: TodayRow[]) {
     if (!rs.length || !payloadRef.current || !formRef.current) return;
@@ -84,11 +93,24 @@ export default function TodayTable({ rows, sent = [], action }: { rows: TodayRow
     payloadRef.current.value = JSON.stringify(
       rs.map((r) => ({
         customerId: r.customerId, email: r.email, playId: r.playId, playName: r.playName,
-        message: r.message, offer: r.offerCode, product: r.productTitle,
+        message: msgOf(r), offer: r.offerCode, product: r.productTitle,
         productId: r.productId, expectedRevenue: r.expectedRevenue, confidence: r.confidence.score,
       })),
     );
     formRef.current.requestSubmit();
+  }
+
+  async function reroll(r: TodayRow) {
+    if (!regenerate || rerolling.has(r.customerId)) return;
+    setRerolling((s) => new Set(s).add(r.customerId));
+    try {
+      const m = await regenerate({
+        playName: r.playName, why: r.why, productTitle: r.productTitle,
+        offerCode: r.offerCode, firstName: r.name?.split(/\s+/)[0] || null,
+      });
+      if (m) setMessages((prev) => ({ ...prev, [r.customerId]: m }));
+    } catch { /* keep current copy */ }
+    finally { setRerolling((s) => { const n = new Set(s); n.delete(r.customerId); return n; }); }
   }
 
   function toggleOpen(id: string) {
@@ -181,7 +203,7 @@ export default function TodayTable({ rows, sent = [], action }: { rows: TodayRow
                       <td>
                         <div className="who">
                           <span className="av">{initials(it.name, it.email)}</span>
-                          <div><div className="nm">{it.name || it.email}</div><div className="sub">{it.segment ?? "—"}</div></div>
+                          <div><div className="nm"><a href={`/customers/${it.customerId}`} style={{ color: "inherit", textDecoration: "none" }}>{it.name || it.email}</a></div><div className="sub">{it.segment ?? "—"}</div></div>
                         </div>
                       </td>
                       <td style={{ fontSize: 12.5 }}><span style={{ fontFamily: "var(--mono)", color: "var(--accent-ink)", marginRight: 6 }}>{it.playId}</span>{it.playName}</td>
@@ -218,7 +240,7 @@ export default function TodayTable({ rows, sent = [], action }: { rows: TodayRow
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, borderTop: "1px solid var(--line)", marginTop: 14, paddingTop: 14 }}>
                 <Field label="Target customer (who)">
-                  <div style={{ fontWeight: 600 }}>{r.name || r.email}</div>
+                  <a href={`/customers/${r.customerId}`} style={{ fontWeight: 600, color: "var(--ink)", textDecoration: "none" }}>{r.name || r.email}</a>
                   <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
                     {[r.segment, r.rfmeScore != null ? `RFME ${r.rfmeScore}` : null].filter(Boolean).join(" · ") || "—"}
                   </div>
@@ -229,8 +251,18 @@ export default function TodayTable({ rows, sent = [], action }: { rows: TodayRow
                 <Field label="Margin-safe offer">
                   {r.offerCode ? <span className="tag acc">{r.offerCode}</span> : <span style={{ color: "var(--faint)" }}>Full price</span>}
                 </Field>
-                <Field label="Klaviyo dynamic message">
-                  <span style={{ fontStyle: "italic", color: "var(--muted)" }}>&ldquo;{r.message}&rdquo;</span>
+                <Field label={
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    Klaviyo dynamic message
+                    {showReroll && (
+                      <button type="button" title="Regenerate copy with AI" onClick={() => reroll(r)} disabled={rerolling.has(r.customerId)}
+                        style={{ border: "none", background: "none", cursor: rerolling.has(r.customerId) ? "default" : "pointer", color: "var(--accent-ink)", padding: 0, lineHeight: 1 }}>
+                        <i className={`ti ti-refresh${rerolling.has(r.customerId) ? " spin" : ""}`} style={{ fontSize: 12 }} />
+                      </button>
+                    )}
+                  </span>
+                }>
+                  <span style={{ fontStyle: "italic", color: "var(--muted)" }}>&ldquo;{msgOf(r)}&rdquo;</span>
                 </Field>
                 <Field label="Orchestrator confidence">{confidenceControl(r)}</Field>
               </div>
@@ -262,7 +294,7 @@ export default function TodayTable({ rows, sent = [], action }: { rows: TodayRow
                     <td>
                       <div className="who">
                         <span className="av">{initials(r.name, r.email)}</span>
-                        <div><div className="nm">{r.name || r.email}</div><div className="sub">{r.segment ?? "—"}</div></div>
+                        <div><div className="nm"><a href={`/customers/${r.customerId}`} style={{ color: "inherit", textDecoration: "none" }}>{r.name || r.email}</a></div><div className="sub">{r.segment ?? "—"}</div></div>
                       </div>
                     </td>
                     <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>
@@ -271,7 +303,7 @@ export default function TodayTable({ rows, sent = [], action }: { rows: TodayRow
                     <td style={{ fontSize: 12.5 }}>{r.productTitle ?? <span style={{ color: "var(--faint)" }}>—</span>}</td>
                     <td style={{ fontSize: 12 }}>{r.offerCode ? <span className="tag acc">{r.offerCode}</span> : <span style={{ color: "var(--faint)" }}>full price</span>}</td>
                     <td className="hide-tablet" style={{ fontSize: 12, color: "var(--muted)" }}>{r.channel}</td>
-                    <td className="hide-tablet" style={{ fontSize: 12, color: "var(--muted)", maxWidth: 220 }}>{r.message}</td>
+                    <td className="hide-tablet" style={{ fontSize: 12, color: "var(--muted)", maxWidth: 220 }}>{msgOf(r)}</td>
                     <td style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, textAlign: "right" }}>{r.expectedRevenueLabel}</td>
                     <td>{confidenceControl(r)}</td>
                     <td style={{ textAlign: "right" }}>
@@ -290,7 +322,7 @@ export default function TodayTable({ rows, sent = [], action }: { rows: TodayRow
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
       <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>{label}</div>

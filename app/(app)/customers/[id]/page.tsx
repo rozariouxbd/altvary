@@ -3,7 +3,11 @@ import { prisma } from "../../../../lib/prisma";
 import { getCurrentStore } from "../../../../lib/auth";
 import { computeSignals } from "../../../../lib/engine/signals";
 import { evaluateAll } from "../../../../lib/engine/evaluate";
+import { buildDecisions } from "../../../../lib/engine/decisions";
+import { generativeCopyEnabled } from "../../../../lib/engine/copy";
 import { formatMoney } from "../../../../lib/money";
+import { regenerateMessage, deployDecision } from "../../today/actions";
+import DecisionPanel from "./DecisionPanel";
 
 const SEG_TAG: Record<string, { cls: string; label: string }> = {
   vip: { cls: "pos", label: "VIP" },
@@ -28,8 +32,9 @@ function fmtDate(d: Date | null): string {
   return d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
 }
 
-export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function CustomerDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ notice?: string }> }) {
   const { id } = await params;
+  const sp = await searchParams;
   const store = await getCurrentStore();
 
   const customer = store ? await prisma.customer.findFirst({
@@ -69,6 +74,11 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
     })
     .filter((x): x is { play: (typeof results)[number]["play"]; expectedValue: number } => x !== null)
     .sort((a, b) => b.expectedValue - a.expectedValue);
+
+  // The single arbitrated decision for this customer (if they're in today's queue).
+  const decisions = store ? await buildDecisions(store) : [];
+  const decision = decisions.find((d) => d.customer.id === id) ?? null;
+  const aiEnabled = generativeCopyEnabled();
 
   const seg = SEG_TAG[customer.segment ?? ""] ?? { cls: "", label: customer.segment ?? "—" };
   const score = Math.round(customer.rfmeScore ?? 0);
@@ -114,6 +124,37 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             <button className="btn btn-ghost btn-sm"><i className="ti ti-file-export"></i> Export</button>
           </div>
         </div>
+
+        {sp.notice === "sent" && (
+          <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}>
+            <i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>Sent — handed to Klaviyo and tracked for outcomes. It&apos;ll show in the Today &rarr; Sent tab and the performance report.</div>
+          </div>
+        )}
+
+        {/* Today's decision — the operational panel (only when this customer is in the queue) */}
+        {decision && (
+          <DecisionPanel
+            customerId={decision.customer.id}
+            email={decision.customer.email}
+            firstName={decision.customer.firstName}
+            playId={decision.playId}
+            playName={decision.playName}
+            why={decision.why}
+            productTitle={decision.productTitle}
+            offerCode={decision.offerCode}
+            channel={decision.channel}
+            message={decision.message}
+            productId={decision.productId}
+            expectedRevenue={decision.expectedRevenue}
+            expectedRevenueLabel={formatMoney(decision.expectedRevenue, currency)}
+            confidenceScore={decision.confidence.score}
+            confidenceCalibrated={decision.confidence.calibrated}
+            aiEnabled={aiEnabled}
+            regenerate={regenerateMessage}
+            deploy={deployDecision}
+            returnTo={`/customers/${id}`}
+          />
+        )}
 
         {/* Stat strip */}
         <div className="card" style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr 1fr 1fr 1fr", gap: 0, marginBottom: 20 }}>

@@ -45,47 +45,66 @@ export function generativeCopyEnabled(): boolean {
   return getClient() != null;
 }
 
-function buildPrompt(d: Decision): string {
-  const name = d.customer.firstName?.trim();
-  const product = d.productTitle
-    ? `Recommended product (use this exact name; do not name any other product): ${d.productTitle}`
+/** The minimal facts the LLM needs — shared by the batch pass and the on-demand regenerate. */
+export interface CopyContext {
+  playName: string;
+  why: string;
+  productTitle: string | null;
+  offerCode: string | null;
+  firstName: string | null;
+}
+function ctxOf(d: Decision): CopyContext {
+  return { playName: d.playName, why: d.why, productTitle: d.productTitle, offerCode: d.offerCode, firstName: d.customer.firstName };
+}
+
+function buildPrompt(ctx: CopyContext): string {
+  const name = ctx.firstName?.trim();
+  const product = ctx.productTitle
+    ? `Recommended product (use this exact name; do not name any other product): ${ctx.productTitle}`
     : `No specific product — keep it general and name no product.`;
-  const offer = d.offerCode
-    ? `Include this discount code exactly once, verbatim: ${d.offerCode}`
+  const offer = ctx.offerCode
+    ? `Include this discount code exactly once, verbatim: ${ctx.offerCode}`
     : `No discount available — do not mention any discount, percentage, deal, sale, or code.`;
   return [
     "Write the message for this customer.",
     `First name: ${name || "(unknown — do not use a name)"}`,
-    `Why we're reaching out: ${d.why}`,
-    `Reason / play: ${d.playName}`,
+    `Why we're reaching out: ${ctx.why}`,
+    `Reason / play: ${ctx.playName}`,
     product,
     offer,
   ].join("\n");
 }
 
 /** Reject empty/overlong output, or any no-offer message that implies a discount. */
-function sanitize(raw: string, d: Decision): string | null {
+function sanitize(raw: string, ctx: CopyContext): string | null {
   const t = raw.trim().replace(/^["'`]+|["'`]+$/g, "").trim();
   if (t.length < 8 || t.length > MAX_LEN) return null;
-  if (!d.offerCode && /\d\s?%|\bdiscount\b|\bpromo\b|\bcoupon\b|\bcode\b|\bsale\b|\d+%?\s*off\b/i.test(t)) {
+  if (!ctx.offerCode && /\d\s?%|\bdiscount\b|\bpromo\b|\bcoupon\b|\bcode\b|\bsale\b|\d+%?\s*off\b/i.test(t)) {
     return null;
   }
   return t;
 }
 
-async function generateOne(c: Anthropic, d: Decision): Promise<string | null> {
+async function generateOne(c: Anthropic, ctx: CopyContext): Promise<string | null> {
   try {
     const resp = await c.messages.create({
       model: MODEL,
       max_tokens: 200,
       system: SYSTEM,
-      messages: [{ role: "user", content: buildPrompt(d) }],
+      messages: [{ role: "user", content: buildPrompt(ctx) }],
     });
     const text = resp.content.map((b) => (b.type === "text" ? b.text : "")).join("");
-    return sanitize(text, d);
+    return sanitize(text, ctx);
   } catch {
     return null; // never let copy generation break a decision build
   }
+}
+
+/** On-demand single generation (for the "regenerate" control). Null when disabled or it fails. */
+export async function regenerateCopy(ctx: CopyContext): Promise<string | null> {
+  const ai = getClient();
+  if (!ai) return null;
+  return generateOne(ai, ctx);
 }
 
 /**
@@ -104,7 +123,7 @@ export async function applyGenerativeCopy(store: Store, decisions: Decision[]): 
     async function worker(): Promise<void> {
       while (i < targets.length) {
         const d = targets[i++];
-        const text = await generateOne(ai, d);
+        const text = await generateOne(ai, ctxOf(d));
         if (text) out.set(d.customer.id, text);
       }
     }

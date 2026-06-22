@@ -338,6 +338,9 @@
   color:var(--ink-2); font-size:20px; border-radius:var(--r-sm); flex-shrink:0; }
 .hamburger:hover{ background:var(--card-2); }
 
+@keyframes alt-spin { to { transform: rotate(360deg); } }
+.spin { display:inline-block; animation: alt-spin .8s linear infinite; }
+
 @media (max-width:768px){
   .hamburger{ display:flex; }
   .hide-tablet{ display:none !important; }

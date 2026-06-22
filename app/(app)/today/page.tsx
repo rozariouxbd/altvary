@@ -4,8 +4,10 @@ import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { buildDecisions } from "../../../lib/engine/decisions";
 import { markDecisionsSent } from "../../../lib/engine/export";
+import { generativeCopyEnabled } from "../../../lib/engine/copy";
 import { getPlay } from "../../../lib/engine/plays";
 import { formatMoney } from "../../../lib/money";
+import { regenerateMessage } from "./actions";
 import TodayTable, { type TodayRow, type SentItem } from "./TodayTable";
 
 export const metadata = { title: "Today — Altvary" };
@@ -125,7 +127,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           ))}
         </div>
 
-        <TodayTable rows={rows} sent={sent} action={markSent} />
+        <TodayTable rows={rows} sent={sent} action={markSent} aiEnabled={generativeCopyEnabled()} regenerate={regenerateMessage} />
 
         <div className="note" style={{ marginTop: 16 }}>
           <i className="ti ti-info-circle" />
