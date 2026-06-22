@@ -1,12 +1,22 @@
 import { redirect } from "next/navigation";
 import Topbar from "../../components/Topbar";
+import { prisma } from "../../../lib/prisma";
 import { getCurrentStore } from "../../../lib/auth";
 import { buildDecisions } from "../../../lib/engine/decisions";
 import { markDecisionsSent } from "../../../lib/engine/export";
+import { getPlay } from "../../../lib/engine/plays";
 import { formatMoney } from "../../../lib/money";
-import TodayTable, { type TodayRow } from "./TodayTable";
+import TodayTable, { type TodayRow, type SentItem } from "./TodayTable";
 
 export const metadata = { title: "Today — Altvary" };
+
+function timeAgo(d: Date): string {
+  const s = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
 
 interface SentRow {
   customerId: string; email: string; playId: string; playName: string;
@@ -53,13 +63,41 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const totalRev = Math.round(decisions.reduce((s, d) => s + d.expectedRevenue, 0));
   const avgConf = decisions.length ? Math.round(decisions.reduce((s, d) => s + d.confidence.score, 0) / decisions.length) : 0;
 
+  // Recently-sent decisions (read-only) for the "Sent" tab — sourced from the Action lifecycle.
+  const sentActions = store ? await prisma.action.findMany({
+    where: { storeId: store.id, status: { in: ["exported", "converted", "expired"] }, exportedAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
+    orderBy: { exportedAt: "desc" },
+    take: 100,
+    select: { customerId: true, playId: true, status: true, exportedAt: true, revenue: true },
+  }) : [];
+  const sentCustIds = [...new Set(sentActions.map((a) => a.customerId))];
+  const sentCusts = sentCustIds.length ? await prisma.customer.findMany({
+    where: { id: { in: sentCustIds } },
+    select: { id: true, firstName: true, lastName: true, email: true, segment: true },
+  }) : [];
+  const sentCustMap = new Map(sentCusts.map((c) => [c.id, c]));
+  const sent: SentItem[] = sentActions.map((a) => {
+    const c = sentCustMap.get(a.customerId);
+    return {
+      customerId: a.customerId,
+      name: c ? `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() : "",
+      email: c?.email ?? "",
+      segment: c?.segment ?? null,
+      playId: a.playId,
+      playName: getPlay(a.playId)?.name ?? a.playId,
+      status: a.status ?? "exported",
+      sentAtLabel: a.exportedAt ? timeAgo(a.exportedAt) : "",
+      revenueLabel: a.status === "converted" && a.revenue != null ? formatMoney(Math.round(a.revenue), currency) : null,
+    };
+  });
+
   return (
     <>
       <Topbar title="Today" sub={`${rows.length} revenue opportunities`} search="Search decisions…" cta={{ icon: "ti-refresh", label: "Sync from Shopify", href: "/api/shopify/sync?return=/today" }} />
       <main className="page">
         {sp.notice === "sent" && (
           <div className="note" style={{ marginBottom: 16, background: "var(--pos-soft)", borderColor: "transparent" }}>
-            <i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>Decisions sent — handed to Klaviyo and tracked for outcomes. They&apos;ll leave today&apos;s queue and show in the performance report once they convert.</div>
+            <i className="ti ti-check" style={{ color: "var(--pos)" }} /><div>Sent — handed to Klaviyo and tracked for outcomes. Find them under the <strong>Sent</strong> tab below; outcomes update as customers purchase.</div>
           </div>
         )}
         <div className="note note-acc" style={{ marginBottom: 16 }}>
@@ -87,7 +125,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           ))}
         </div>
 
-        <TodayTable rows={rows} action={markSent} />
+        <TodayTable rows={rows} sent={sent} action={markSent} />
 
         <div className="note" style={{ marginTop: 16 }}>
           <i className="ti ti-info-circle" />

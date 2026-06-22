@@ -21,6 +21,19 @@ export interface TodayRow {
   confidence: { score: number; calibrated: boolean; factors: { label: string; value: string; contribution: number }[] };
 }
 
+/** A read-only, already-sent decision (from the Action lifecycle) for the "Sent" tab. */
+export interface SentItem {
+  customerId: string;
+  name: string;
+  email: string;
+  segment: string | null;
+  playId: string;
+  playName: string;
+  status: string;            // exported | converted | expired
+  sentAtLabel: string;       // "2h ago"
+  revenueLabel: string | null; // set when converted
+}
+
 function initials(name: string, email: string): string {
   const w = name.trim().split(/\s+/);
   return ((w[0]?.[0] ?? "") + (w[1]?.[0] ?? "")).toUpperCase() || (email[0] ?? "?").toUpperCase();
@@ -37,25 +50,37 @@ function groupOf(playId: string): "routine" | "replenish" | "safety" | "other" {
   return GROUP[playId] ?? "other";
 }
 
-type Filter = "all" | "routine" | "replenish" | "safety";
+type Filter = "all" | "routine" | "replenish" | "safety" | "sent";
 const TABS: { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "routine", label: "Routine gaps" },
   { id: "replenish", label: "Replenishments" },
   { id: "safety", label: "Safety holds" },
+  { id: "sent", label: "Sent" },
 ];
 
-export default function TodayTable({ rows, action }: { rows: TodayRow[]; action: (fd: FormData) => void }) {
+function sentChip(it: SentItem) {
+  if (it.status === "converted")
+    return <span className="tag" style={{ background: "var(--pos-soft)", color: "var(--pos)", fontWeight: 700 }}><i className="ti ti-check" style={{ fontSize: 11 }} /> Converted{it.revenueLabel ? ` · ${it.revenueLabel}` : ""}</span>;
+  if (it.status === "expired")
+    return <span className="tag" style={{ background: "var(--card-2)", color: "var(--muted)" }}>Expired</span>;
+  return <span className="tag acc">Sent · awaiting outcome</span>;
+}
+
+export default function TodayTable({ rows, sent = [], action }: { rows: TodayRow[]; sent?: SentItem[]; action: (fd: FormData) => void }) {
   const formRef = useRef<HTMLFormElement>(null);
   const payloadRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState<Set<string>>(new Set()); // expanded confidence cells
   const [view, setView] = useState<"cards" | "table">("cards");
   const [filter, setFilter] = useState<Filter>("all");
+  const [sending, setSending] = useState<Set<string>>(new Set()); // momentary "Sent ✓" feedback
 
-  const shown = filter === "all" ? rows : rows.filter((r) => groupOf(r.playId) === filter);
+  const onSent = filter === "sent";
+  const shown = filter === "all" ? rows : filter === "sent" ? [] : rows.filter((r) => groupOf(r.playId) === filter);
 
   function send(rs: TodayRow[]) {
     if (!rs.length || !payloadRef.current || !formRef.current) return;
+    setSending((prev) => { const n = new Set(prev); rs.forEach((r) => n.add(r.customerId)); return n; });
     payloadRef.current.value = JSON.stringify(
       rs.map((r) => ({
         customerId: r.customerId, email: r.email, playId: r.playId, playName: r.playName,
@@ -103,7 +128,7 @@ export default function TodayTable({ rows, action }: { rows: TodayRow[]; action:
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
         <div style={{ display: "inline-flex", gap: 2, background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r-sm)", padding: 3, flexWrap: "wrap" }}>
           {TABS.map((t) => {
-            const n = t.id === "all" ? rows.length : rows.filter((r) => groupOf(r.playId) === t.id).length;
+            const n = t.id === "all" ? rows.length : t.id === "sent" ? sent.length : rows.filter((r) => groupOf(r.playId) === t.id).length;
             const on = filter === t.id;
             return (
               <button key={t.id} type="button" onClick={() => setFilter(t.id)}
@@ -116,24 +141,60 @@ export default function TodayTable({ rows, action }: { rows: TodayRow[]; action:
           })}
         </div>
 
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
-          <div style={{ display: "inline-flex", gap: 2, background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r-sm)", padding: 3 }}>
-            {([["cards", "ti-layout-grid"], ["table", "ti-list"]] as const).map(([v, icon]) => (
-              <button key={v} type="button" onClick={() => setView(v)} title={v === "cards" ? "Card view" : "Table view"}
-                style={{ padding: "6px 10px", borderRadius: 6, fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer", textTransform: "capitalize",
-                  color: view === v ? "var(--ink)" : "var(--muted)", background: view === v ? "var(--card-2)" : "transparent", boxShadow: view === v ? "var(--shadow)" : "none",
-                  display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <i className={`ti ${icon}`} /> {v}
-              </button>
-            ))}
+        {!onSent && (
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+            <div style={{ display: "inline-flex", gap: 2, background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r-sm)", padding: 3 }}>
+              {([["cards", "ti-layout-grid"], ["table", "ti-list"]] as const).map(([v, icon]) => (
+                <button key={v} type="button" onClick={() => setView(v)} title={v === "cards" ? "Card view" : "Table view"}
+                  style={{ padding: "6px 10px", borderRadius: 6, fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer", textTransform: "capitalize",
+                    color: view === v ? "var(--ink)" : "var(--muted)", background: view === v ? "var(--card-2)" : "transparent", boxShadow: view === v ? "var(--shadow)" : "none",
+                    display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <i className={`ti ${icon}`} /> {v}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="btn btn-primary btn-sm" disabled={!shown.length} onClick={() => send(shown)}>
+              <i className="ti ti-send" /> Send all ({shown.length})
+            </button>
           </div>
-          <button type="button" className="btn btn-primary btn-sm" disabled={!shown.length} onClick={() => send(shown)}>
-            <i className="ti ti-send" /> Send all ({shown.length})
-          </button>
-        </div>
+        )}
       </div>
 
-      {shown.length === 0 ? (
+      {onSent ? (
+        /* ---------- SENT VIEW (read-only) ---------- */
+        sent.length === 0 ? (
+          <div className="card" style={{ padding: "32px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+            Nothing sent in the last 30 days yet — deploy a decision and it&apos;ll appear here with its outcome.
+          </div>
+        ) : (
+          <div className="card">
+            <div className="card-head"><div>
+              <div className="card-title">Recently sent</div>
+              <div className="card-sub">Last 30 days · read-only · outcomes update as customers purchase</div>
+            </div></div>
+            <div className="tbl-wrap">
+              <table className="tbl">
+                <thead><tr><th>Who</th><th>Play</th><th>Status</th><th className="hide-tablet" style={{ textAlign: "right" }}>Sent</th></tr></thead>
+                <tbody>
+                  {sent.map((it, i) => (
+                    <tr key={`${it.customerId}-${i}`}>
+                      <td>
+                        <div className="who">
+                          <span className="av">{initials(it.name, it.email)}</span>
+                          <div><div className="nm">{it.name || it.email}</div><div className="sub">{it.segment ?? "—"}</div></div>
+                        </div>
+                      </td>
+                      <td style={{ fontSize: 12.5 }}><span style={{ fontFamily: "var(--mono)", color: "var(--accent-ink)", marginRight: 6 }}>{it.playId}</span>{it.playName}</td>
+                      <td>{sentChip(it)}</td>
+                      <td className="hide-tablet" style={{ textAlign: "right", fontSize: 12, color: "var(--muted)" }}>{it.sentAtLabel}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      ) : shown.length === 0 ? (
         <div className="card" style={{ padding: "32px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
           {rows.length === 0
             ? "No opportunities right now — sync Shopify + run scoring to populate today's decisions."
@@ -176,7 +237,9 @@ export default function TodayTable({ rows, action }: { rows: TodayRow[]; action:
 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, borderTop: "1px solid var(--line)", marginTop: 14, paddingTop: 14 }}>
                 <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Channel sync: <strong style={{ color: "var(--ink-2)" }}>{r.channel}</strong></span>
-                <button type="button" className="btn btn-primary btn-sm" onClick={() => send([r])}><i className="ti ti-send" /> Deploy to Klaviyo</button>
+                <button type="button" className="btn btn-primary btn-sm" disabled={sending.has(r.customerId)} onClick={() => send([r])}>
+                  {sending.has(r.customerId) ? <><i className="ti ti-check" /> Sent</> : <><i className="ti ti-send" /> Deploy to Klaviyo</>}
+                </button>
               </div>
             </div>
           ))}
@@ -212,7 +275,9 @@ export default function TodayTable({ rows, action }: { rows: TodayRow[]; action:
                     <td style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, textAlign: "right" }}>{r.expectedRevenueLabel}</td>
                     <td>{confidenceControl(r)}</td>
                     <td style={{ textAlign: "right" }}>
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => send([r])}><i className="ti ti-send" /> Send</button>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled={sending.has(r.customerId)} onClick={() => send([r])}>
+                        {sending.has(r.customerId) ? <><i className="ti ti-check" /> Sent</> : <><i className="ti ti-send" /> Send</>}
+                      </button>
                     </td>
                   </tr>
                 ))}
