@@ -35,6 +35,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
     name: `${d.customer.firstName ?? ""} ${d.customer.lastName ?? ""}`.trim(),
     email: d.customer.email,
     segment: d.customer.segment,
+    persona: d.customer.skinProfile ?? d.customer.buyerPersona ?? null,
+    rfmeScore: d.customer.rfmeScore,
     playId: d.playId,
     playName: d.playName,
     why: d.why,
